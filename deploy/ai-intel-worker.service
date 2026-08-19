@@ -1,0 +1,17 @@
+[Unit]
+Description=Aex AI intelligence worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/aex-ai-intel
+ExecStart=/opt/aex-ai-intel/.venv/bin/python -m app.worker --daemon
+Restart=always
+RestartSec=15
+EnvironmentFile=/opt/aex-ai-intel/.env
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

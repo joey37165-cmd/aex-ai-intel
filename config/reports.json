@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "timezone": "Asia/Shanghai",
+  "daily": {
+    "enabled": true,
+    "send_at": "09:00"
+  },
+  "weekly": {
+    "enabled": true,
+    "weekday": "monday",
+    "send_at": "09:00"
+  }
+}

@@ -1,0 +1,266 @@
+# Aex AI 情报与知识系统
+
+这是一个面向个人 AI 情报输入、筛选、推送和知识沉淀的系统。
+
+当前目标是把来自 RSS、Email、X 和 GitHub 的信息，经过 AI 筛选和固定模板格式化后推送到 Telegram；用户再从 Telegram 中选择值得长期保存的内容，写入 GitHub Markdown 知识库。
+
+## 当前状态
+
+- 40 个 RSS/Atom 已接入并启用，其中包含 15 个通过 `xgo.ing` 转换的 X 账号 RSS；另有 4 个 Sitemap、3 个 Changelog 和 1 个 Email 来源。
+- Anthropic News 已通过官方 Sitemap 接入；Sitemap 只发现 URL，仅对新文章抓取一次标题和摘要。
+- DeepSeek Official News 与 API Change Log 已接入；Change Log 按日期、标题和内容指纹拆分去重。
+- Claude Platform Release Notes、OpenAI Developer Changelog 和 Mistral AI News 已接入。
+- RSS → 去重 → Telegram 频道的最小 MVP 已验证成功。
+- 首次基线已建立，不会重复推送历史消息。
+- Telegram 频道已接通，Worker 可通过 `python -m app.worker --daemon` 持续运行。
+- Newsletter 已接入 TLDR AI Email、The Rundown AI RSS、The Neuron Atom、The Batch Sitemap 和 Superhuman AI Sitemap；Product Hunt AI 产品 Feed、GitHub Release 来源和 Gemini API Changelog 也已接入。X 官方 API Adapter 仍默认关闭，当前使用 15 个 `xgo.ing` 第三方 RSS 账号源；知识库按钮、前端尚未实现。
+- 第一阶段 LLM 供应商已确定为 DeepSeek；具体模型通过配置选择，不写死在业务代码中。
+- 第一阶段正式 Worker 已建立：`python -m app.worker --daemon`，生产环境由 `systemd` 托管。
+- 未来前端采用公开只读页面与私有管理页面分离的模式。
+
+验证命令：
+
+```powershell
+python -m unittest discover -s tests -v
+python telegram_poc.py preview
+python telegram_poc.py bootstrap
+python telegram_poc.py run
+python -m app.worker --db data/test-runtime.db --bootstrap
+python -m app.worker --db data/test-runtime.db --dry-run
+python -m app.worker --db data/runtime.db --status
+python -m app.worker --db data/runtime.db --review
+python -m app.worker --db data/runtime.db --prompt-status
+python -m app.worker --db data/runtime.db --preview-template
+python -m app.worker --db data/runtime.db --preview-digest
+```
+
+## 总体架构
+
+```text
+RSS / Sitemap / Email / X / GitHub
+          |
+          v
+      消息采集层
+          |
+          v
+    标准化、去重、状态记录
+          |
+          v
+      AI 筛选与结构化提取
+          |
+          v
+      固定 Telegram 模板渲染
+          |
+          v
+       Telegram 频道
+          |
+    加入 / 稍后 / 忽略
+          |
+          v
+       GitHub API
+          |
+          v
+    GitHub Markdown 知识库
+          |
+          v
+      可重建搜索索引
+          |
+          v
+          前端
+```
+
+## 核心边界
+
+### 服务器
+
+服务器只负责运行系统：
+
+- 按每个来源的配置频率自动采集消息
+- AI 筛选和摘要
+- Telegram 推送
+- 接收 Telegram 决策
+- 通过 GitHub API 写入知识库
+- 保存 SQLite 运行状态、日志、重试队列和搜索索引
+
+服务器不作为知识库的权威存储，不保存知识库的正式 Markdown 副本。
+
+### GitHub
+
+建议使用两个私有仓库：
+
+1. `ai-intel-runtime`：程序代码、配置、测试和部署文件。
+2. `ai-knowledge-base`：长期知识库 Markdown、索引和归档内容。
+
+知识库仓库是知识内容的唯一事实来源。服务器上的搜索索引只是可删除、可重建的派生缓存。
+
+### Telegram
+
+Telegram 是阅读、通知和人工决策入口，不是知识库。推送消息可以带有：
+
+```text
+[加入知识库] [稍后处理] [忽略]
+```
+
+## AI 处理原则
+
+AI 先输出结构化 JSON，程序再使用固定模板渲染 Telegram 消息。不要让模型直接生成最终 HTML 或 Markdown 消息。
+
+推荐的结构化字段：
+
+```json
+{
+  "title": "消息标题",
+  "summary": "一句话摘要",
+  "why_it_matters": "为什么值得关注",
+  "category": "models",
+  "priority": "S",
+  "action": "值得测试",
+  "confidence": 0.92
+}
+```
+
+消息模板属于产品展示逻辑，存放在运行仓库并支持版本化。AI Prompt 属于模型运行逻辑，计划接入 Langfuse 做版本、追踪和评测；运行仓库保留稳定 Prompt 作为 fallback。
+
+当前本地版本文件为 `config/templates/telegram.html`（实时情报）和 `config/templates/telegram_digest.html`（日报/周报共用），以及 `config/prompts/intelligence_filter.md`。修改模板和 Prompt 不需要改业务流程代码。
+
+日报和周报共用同一个摘要模板，报告类型和周期由数据注入：
+
+```text
+日报：每天 09:00（Asia/Shanghai）
+周报：每周一 09:00（Asia/Shanghai）
+```
+
+时间配置记录在 `config/reports.json`。当前已完成模板和数据结构，自动聚合、生成和定时发送需要在实时推送稳定后单独实现。
+
+Telegram 发布门槛位于 `config/publishing.json`。DeepSeek 先给出结构化判断，程序再执行确定性门槛；当前仅允许置信度不低于 `0.75` 的 S、A级 `notify` 结果进入发送队列。未通过门槛的结果会降为 `review`，并在分析原始数据中记录原因，不会直接推送。
+
+```json
+{
+  "telegram": {
+    "allowed_priorities": ["S", "A"],
+    "min_confidence": 0.75
+  }
+}
+```
+
+修改 Prompt 后同步更新 `.env` 中的 `PROMPT_VERSION`，便于后续比较不同版本的筛选效果。`--status` 会显示分析决策与优先级分布，用于观察规则是否过松或过严。
+
+`--review` 是本地只读复核队列，显示 AI 判为 `review` 的内容，不会重新调用模型、发送 Telegram 或修改状态：
+
+```powershell
+python -m app.worker --db data/runtime.db --review --limit 20
+```
+
+第一阶段通过 OpenAI-compatible 适配器调用 DeepSeek API。API 地址、模型名和密钥全部通过配置注入，Domain 和 Application 层不得依赖 DeepSeek SDK 或具体模型名称。
+
+## 知识库分类
+
+知识库统一使用 Markdown + YAML front matter，按来源区分手动资料和情报资料：
+
+```yaml
+origin: manual
+```
+
+或：
+
+```yaml
+origin: intelligence
+```
+
+三大领域：
+
+```text
+models    大模型、模型更新、能力和评测
+context   系统提示词、对话、上下文工程和记忆
+tools     软件、API、插件、Agent 和工作流工具
+```
+
+提示词是知识库中的一等内容，至少需要记录：适用模型、变量、输入输出示例、版本、评测结果和适用场景。
+
+所有知识条目还需要记录可见性和发布状态，默认值为：
+
+```yaml
+visibility: private
+publication_status: draft
+```
+
+过期内容采用：
+
+```text
+active -> review -> archive
+```
+
+从当前知识库移除，但保留 Git 历史，避免误删后无法恢复。
+
+## 目标代码结构
+
+正式版本采用模块化单体，不一开始拆成微服务：
+
+```text
+app/
+  domain/
+  application/
+  ports/
+  adapters/
+    sources/
+    telegram/
+    github/
+    langfuse/
+  infrastructure/
+  api/
+  worker/
+```
+
+关键接口包括：
+
+- `SourceAdapter`：RSS、Email、X、GitHub 等来源适配器。
+- `NotificationPort`：Telegram 推送和按钮事件。
+- `KnowledgeRepository`：通过 GitHub API 读写知识库。
+- `StateStore`：SQLite 状态、去重、发送记录和重试。
+
+## 前端访问边界
+
+未来前端分为两个区域：
+
+```text
+公开只读页面
+  情报流、知识库浏览、全文搜索、提示词公开内容
+
+私有管理页面
+  消息源管理、模板和 Prompt 管理、资料上传、归档删除、运行状态
+```
+
+所有写操作和系统配置必须经过身份认证。只有明确标记为 `public + published` 的内容才能由公开 API 返回。公开页面不能暴露原始邮件、未审核情报、内部 Prompt、运行日志或任何密钥。
+
+## 重要工程约束
+
+- 每个消息必须可以通过 URL 或内容指纹幂等识别。
+- Telegram 重复点击不能生成重复知识卡片。
+- GitHub API 写入需要处理超时、限流和冲突重试。
+- 程序重启后必须能够从 SQLite 状态继续工作。
+- 正式环境必须由 `systemd` 管理常驻 Worker，不能依赖人工执行命令或 PowerShell 循环。
+- 自动轮询必须支持单来源超时隔离、失败重试和优雅退出；一个来源失败不能阻塞其他来源。
+- 所有外部输入都视为不可信内容，不能让消息内容覆盖系统 Prompt。
+- Token、Cookie、API Key 只能放在服务器环境变量或 `.env`，不能写入 Git。
+- 正式功能必须有单元测试和失败路径测试。
+
+## 分期计划
+
+1. 完成来源注册、自动采集、去重、AI 结构化筛选、模板渲染、Telegram 自动推送、重试和运行监控。
+2. 加入 Telegram 决策按钮和 GitHub 知识库写入。
+3. 加入手动上传、过期治理和可重建搜索索引。
+4. 实现前端情报流、知识库、搜索、来源和模板管理。
+5. 扩充并评估第三方 X RSS，完善 Email，接入 Langfuse Prompt 管理和评测。
+
+Langfuse 已支持远程 Chat Prompt：在 Langfuse 创建名称为 `ai-intelligence-filter` 的 Chat Prompt，System 消息保存筛选规则，User 消息使用 `{{content_json}}` 接收程序序列化的候选消息，并发布 `production` label；将 `.env` 中 `LANGFUSE_ENABLED=true`、公钥和密钥配置好，Worker 会每 60 秒刷新一次，网络失败自动回退到本地 Prompt。不要把 Langfuse 密钥提交到仓库。
+
+Email 和 X 适配器已经加入。Email 使用 IMAP 只读模式，需要设置 `AI_EMAIL_USERNAME`、`AI_EMAIL_PASSWORD`；每个 Newsletter 还应配置 `from_address`，共用发件地址时再配置 `from_name`，避免采集同一邮箱内的无关邮件。TLDR AI 已按这套规则启用。官方 X API v2 Recent Search 仍默认关闭；当前 X 账号通过 `xgo.ing` 提供的第三方 RSS 接入，并在来源配置中标记 `provider: xgo.ing`、`origin: third_party`。该服务可能存在延迟、漏消息或中断，不能视为官方 API。
+
+第一阶段完成后，服务器必须能够在无人操作的情况下持续运行。每个来源按照自己的轮询间隔执行，新消息经过 AI 筛选后自动推送到 Telegram；网络、RSS、LLM 或 Telegram 的短暂失败不能导致 Worker 永久停止。
+
+## 相关文档
+
+- [AI 信息源清单](AI%20信息源清单.md)
+- [Telegram 链路验证](Telegram%20链路验证.md)
+- [Agent 开发约束](AGENTS.md)
+- [技术栈](TECH_STACK.md)
