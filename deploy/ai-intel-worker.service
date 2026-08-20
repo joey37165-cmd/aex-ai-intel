@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=aex-ai
+Group=aex-ai
 WorkingDirectory=/opt/aex-ai-intel
 ExecStart=/opt/aex-ai-intel/.venv/bin/python -m app.worker --daemon
 Restart=always
