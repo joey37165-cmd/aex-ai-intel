@@ -111,10 +111,10 @@ AI 先输出结构化 JSON，程序再使用固定模板渲染 Telegram 消息�
 
 ```json
 {
-  "title": "消息标题",
+  "display_title": "中文消息标题",
   "summary": "一句话摘要",
   "why_it_matters": "为什么值得关注",
-  "category": "models",
+  "category": "AI 前沿信息",
   "priority": "S",
   "action": "值得测试",
   "confidence": 0.92
@@ -123,7 +123,7 @@ AI 先输出结构化 JSON，程序再使用固定模板渲染 Telegram 消息�
 
 消息模板属于产品展示逻辑，存放在运行仓库并支持版本化。AI Prompt 属于模型运行逻辑，计划接入 Langfuse 做版本、追踪和评测；运行仓库保留稳定 Prompt 作为 fallback。
 
-当前本地版本文件为 `config/templates/telegram.html`（实时情报）和 `config/templates/telegram_digest.html`（日报/周报共用），以及 `config/prompts/intelligence_filter.md`。修改模板和 Prompt 不需要改业务流程代码。
+当前本地版本文件为 `config/templates/telegram.html`（实时情报）和 `config/templates/telegram_digest.html`（日报/周报共用），以及 `config/prompts/intelligence_filter.md`。实时消息会使用 AI 生成的 `display_title`，统一为中文并移除标题表情；链接行显示 `🔗 阅读原文` 和 `𝕏 我的 X`。修改模板和 Prompt 不需要改业务流程代码。
 
 日报和周报共用同一个摘要模板，报告类型和周期由数据注入：
 
