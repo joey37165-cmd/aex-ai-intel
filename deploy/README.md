@@ -14,25 +14,14 @@ sudo mkdir -p /opt/aex-ai-intel
 sudo chown -R aex-ai:aex-ai /opt/aex-ai-intel
 ```
 
-## 2. 拉取私有 GitHub 仓库
+## 2. 拉取公开 GitHub 仓库
 
-推荐使用 GitHub Deploy Key，不要把 Personal Access Token 写入 clone URL。
-
-以 `aex-ai` 用户生成 Deploy Key：
+仓库目前是公开的，不需要 GitHub Token 或 Deploy Key：
 
 ```bash
-sudo -u aex-ai mkdir -p /home/aex-ai/.ssh
-sudo -u aex-ai chmod 700 /home/aex-ai/.ssh
-sudo -u aex-ai ssh-keygen -t ed25519 -f /home/aex-ai/.ssh/github_deploy -C "aex-ai-intel-server"
-sudo cat /home/aex-ai/.ssh/github_deploy.pub
-```
-
-将公钥添加到 GitHub 仓库 `Settings -> Deploy keys`，勾选只读权限，然后：
-
-```bash
-sudo -u aex-ai sh -c 'ssh-keyscan github.com >> /home/aex-ai/.ssh/known_hosts'
-sudo -u aex-ai env GIT_SSH_COMMAND="ssh -i /home/aex-ai/.ssh/github_deploy -o IdentitiesOnly=yes -o UserKnownHostsFile=/home/aex-ai/.ssh/known_hosts" \
-  git clone git@github.com:joey37165-cmd/aex-ai-intel.git /opt/aex-ai-intel
+sudo -u aex-ai git clone \
+  https://github.com/joey37165-cmd/aex-ai-intel.git \
+  /opt/aex-ai-intel
 ```
 
 如果服务器上已经存在 `aex-ai` 用户或代码目录，跳过对应的创建/clone 命令。
@@ -99,7 +88,7 @@ sudo -u aex-ai .venv/bin/python -m app.worker --db data/runtime.db --status
 ```bash
 cd /opt/aex-ai-intel
 sudo systemctl stop ai-intel-worker
-sudo -u aex-ai env GIT_SSH_COMMAND="ssh -i /home/aex-ai/.ssh/github_deploy -o IdentitiesOnly=yes -o UserKnownHostsFile=/home/aex-ai/.ssh/known_hosts" git -C /opt/aex-ai-intel pull --ff-only origin main
+sudo -u aex-ai git -C /opt/aex-ai-intel pull --ff-only origin main
 sudo systemctl start ai-intel-worker
 sudo journalctl -u ai-intel-worker -n 50 --no-pager
 ```
