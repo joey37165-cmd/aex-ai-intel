@@ -111,7 +111,7 @@ ai-intel-api.service
 ```text
 sqlite3 + WAL       SQLite Repository 的第一版实现
 urllib.request      外部 HTTP 调用的第一版实现
-显式 Worker 调度    以来源轮询间隔驱动的第一版调度实现
+显式 Worker 调度    以来源轮询间隔驱动采集，并调度幂等的日报/周报
 ```
 
 这些实现都位于适配器或基础设施边界内，Domain 和 Application 不依赖具体库。正式服务器部署前再引入 SQLAlchemy/Alembic、httpx 和调度库，并为替换增加集成测试；不会把临时代码散落到业务层。

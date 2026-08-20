@@ -83,7 +83,11 @@ def render_digest(report: DigestReport, template_path: Path | None = None) -> st
         "source_links": report.source_links,
         "my_x_link": _creator_x_link(),
     }
-    return template.format(**values)
+    rendered = template.format(**values)
+    if len(rendered) > 4000 and values["source_links"]:
+        values["source_links"] = ""
+        rendered = template.format(**values)
+    return rendered
 
 
 def _creator_x_link() -> str:

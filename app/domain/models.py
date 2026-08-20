@@ -43,6 +43,27 @@ class DigestReport:
 
 
 @dataclass(frozen=True)
+class DigestCandidate:
+    item_id: str
+    source_name: str
+    title: str
+    url: str
+    category: str
+    priority: str
+    summary: str
+    why_it_matters: str
+    occurred_at: datetime
+
+
+@dataclass(frozen=True)
+class ReportWindow:
+    report_id: str
+    report_type: str
+    period_start: datetime
+    period_end: datetime
+
+
+@dataclass(frozen=True)
 class ProcessOutcome:
     created: bool = False
     analyzed: bool = False

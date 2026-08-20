@@ -25,9 +25,17 @@ class PromptProvider:
 
 
 class LocalPromptProvider(PromptProvider):
-    def __init__(self, path: Path, user_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        user_path: Path | None = None,
+        version_env: str = "PROMPT_VERSION",
+        version_default: str = "local-v2",
+    ) -> None:
         self.path = path
         self.user_path = user_path
+        self.version_env = version_env
+        self.version_default = version_default
 
     def get_prompt(self) -> tuple[list[dict[str, str]], str]:
         try:
@@ -38,7 +46,7 @@ class LocalPromptProvider(PromptProvider):
             user_prompt = self.user_path.read_text(encoding="utf-8") if self.user_path else DEFAULT_USER_PROMPT
         except OSError:
             user_prompt = DEFAULT_USER_PROMPT
-        version = os.environ.get("PROMPT_VERSION", "local-v2") if self.path.exists() else "local-fallback"
+        version = os.environ.get(self.version_env, self.version_default) if self.path.exists() else "local-fallback"
         return [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -124,14 +132,31 @@ class LangfusePromptProvider(PromptProvider):
         return messages, f"langfuse:{version}"
 
 
-def build_prompt_provider() -> PromptProvider:
-    path = Path(os.environ.get("PROMPT_PATH", "config/prompts/intelligence_filter.md"))
+def _project_path(env_name: str, default: str) -> Path:
+    path = Path(os.environ.get(env_name, default))
     if not path.is_absolute():
         path = Path(__file__).resolve().parents[3] / path
-    user_path = Path(os.environ.get("USER_PROMPT_PATH", "config/prompts/intelligence_filter_user.md"))
-    if not user_path.is_absolute():
-        user_path = Path(__file__).resolve().parents[3] / user_path
-    local = LocalPromptProvider(path, user_path)
+    return path
+
+
+def _build_prompt_provider(
+    *,
+    prompt_path_env: str,
+    prompt_path_default: str,
+    user_path_env: str,
+    user_path_default: str,
+    version_env: str,
+    version_default: str,
+    prompt_name_env: str,
+    prompt_name_default: str,
+    prompt_label_env: str,
+) -> PromptProvider:
+    local = LocalPromptProvider(
+        _project_path(prompt_path_env, prompt_path_default),
+        _project_path(user_path_env, user_path_default),
+        version_env=version_env,
+        version_default=version_default,
+    )
     enabled = os.environ.get("LANGFUSE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
@@ -146,7 +171,35 @@ def build_prompt_provider() -> PromptProvider:
         host=os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
         public_key=public_key,
         secret_key=secret_key,
-        name=os.environ.get("LANGFUSE_PROMPT_NAME", "ai-intelligence-filter"),
-        label=os.environ.get("LANGFUSE_PROMPT_LABEL", "production"),
+        name=os.environ.get(prompt_name_env, prompt_name_default),
+        label=os.environ.get(prompt_label_env, "production"),
         cache_seconds=cache_seconds,
+    )
+
+
+def build_prompt_provider() -> PromptProvider:
+    return _build_prompt_provider(
+        prompt_path_env="PROMPT_PATH",
+        prompt_path_default="config/prompts/intelligence_filter.md",
+        user_path_env="USER_PROMPT_PATH",
+        user_path_default="config/prompts/intelligence_filter_user.md",
+        version_env="PROMPT_VERSION",
+        version_default="local-v2",
+        prompt_name_env="LANGFUSE_PROMPT_NAME",
+        prompt_name_default="ai-intelligence-filter",
+        prompt_label_env="LANGFUSE_PROMPT_LABEL",
+    )
+
+
+def build_digest_prompt_provider() -> PromptProvider:
+    return _build_prompt_provider(
+        prompt_path_env="DIGEST_PROMPT_PATH",
+        prompt_path_default="config/prompts/digest_summary.md",
+        user_path_env="DIGEST_USER_PROMPT_PATH",
+        user_path_default="config/prompts/digest_summary_user.md",
+        version_env="DIGEST_PROMPT_VERSION",
+        version_default="local-v1",
+        prompt_name_env="LANGFUSE_DIGEST_PROMPT_NAME",
+        prompt_name_default="ai-intelligence-digest",
+        prompt_label_env="LANGFUSE_DIGEST_PROMPT_LABEL",
     )

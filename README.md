@@ -16,6 +16,7 @@
 - Newsletter 已接入 TLDR AI Email、The Rundown AI RSS、The Neuron Atom、The Batch Sitemap 和 Superhuman AI Sitemap；Product Hunt AI 产品 Feed、GitHub Release 来源和 Gemini API Changelog 也已接入。X 官方 API Adapter 仍默认关闭，当前使用 15 个 `xgo.ing` 第三方 RSS 账号源；知识库按钮、前端尚未实现。
 - 第一阶段 LLM 供应商已确定为 DeepSeek；具体模型通过配置选择，不写死在业务代码中。
 - 第一阶段正式 Worker 已建立：`python -m app.worker --daemon`，生产环境由 `systemd` 托管。
+- 日报和周报已接入同一个常驻 Worker：日报每天 09:00 汇总前一天 09:00 至当天 09:00，周报每周一 09:00 汇总上周一 09:00 至本周一 09:00，时区均为 `Asia/Shanghai`。
 - 未来前端采用公开只读页面与私有管理页面分离的模式。
 
 验证命令：
@@ -32,6 +33,7 @@ python -m app.worker --db data/runtime.db --review
 python -m app.worker --db data/runtime.db --prompt-status
 python -m app.worker --db data/runtime.db --preview-template
 python -m app.worker --db data/runtime.db --preview-digest
+python -m app.worker --db data/runtime.db --reports-once
 ```
 
 ## 总体架构
@@ -130,7 +132,21 @@ AI 先输出结构化 JSON，程序再使用固定模板渲染 Telegram 消息�
 周报：每周一 09:00（Asia/Shanghai）
 ```
 
-时间配置记录在 `config/reports.json`。当前已完成模板和数据结构，自动聚合、生成和定时发送需要在实时推送稳定后单独实现。
+时间配置记录在 `config/reports.json`。日报与周报使用同一套自动流程：
+
+```text
+到期窗口计算
+  -> 查询窗口内 AI 最终判定为 notify 的 S/A 内容
+  -> 按 URL 去重并限制候选数量
+  -> DeepSeek 生成结构化摘要
+  -> 程序使用 telegram_digest.html 渲染
+  -> Telegram 发送
+  -> SQLite 记录 report_id、Prompt 版本、message_id 和重试状态
+```
+
+报告使用稳定的 `report_id` 保证同一周期不会重复创建。发送或模型调用失败会持久化并采用有上限的指数退避；服务器在计划时间后 24 小时内恢复时会补发，超过补发窗口不会发送陈旧周报。`--reports-once` 用于立即处理当前到期报告，生产环境不依赖手工执行该命令。
+
+报告摘要使用独立 Prompt。仓库 fallback 位于 `config/prompts/digest_summary.md` 和 `config/prompts/digest_summary_user.md`；Langfuse Prompt 名默认为 `ai-intelligence-digest`，可通过 `LANGFUSE_DIGEST_PROMPT_NAME` 与 `LANGFUSE_DIGEST_PROMPT_LABEL` 修改。Langfuse 中尚未创建该 Prompt 或暂时不可用时，系统继续使用本地 fallback。
 
 Telegram 发布门槛位于 `config/publishing.json`。DeepSeek 先给出结构化判断，程序再执行确定性门槛；当前仅允许置信度不低于 `0.75` 的 S、A级 `notify` 结果进入发送队列。未通过门槛的结果会降为 `review`，并在分析原始数据中记录原因，不会直接推送。
 

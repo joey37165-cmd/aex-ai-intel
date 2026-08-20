@@ -156,6 +156,16 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("AI 应用", weekly_text)
         self.assertNotIn("建议动作", daily_text)
 
+    def test_digest_drops_source_links_if_telegram_message_would_be_too_long(self):
+        report = DigestReport(
+            report_title="AI 日报", period_label="2026-08-19",
+            overview="摘要", frontier_items="前沿", application_items="应用",
+            key_takeaways="观察", source_links="x" * 5000,
+        )
+        text = render_digest(report)
+        self.assertLessEqual(len(text), 4000)
+        self.assertNotIn("x" * 100, text)
+
     def test_low_confidence_notification_is_held_for_review(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.74)
         outcome = process_item(self.store, item(), FixedAnalyzer(result), FakeNotifier(), NotificationPolicy())

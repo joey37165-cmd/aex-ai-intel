@@ -3,11 +3,15 @@
   "timezone": "Asia/Shanghai",
   "daily": {
     "enabled": true,
-    "send_at": "09:00"
+    "send_at": "09:00",
+    "catchup_hours": 24,
+    "max_items": 30
   },
   "weekly": {
     "enabled": true,
     "weekday": "monday",
-    "send_at": "09:00"
+    "send_at": "09:00",
+    "catchup_hours": 24,
+    "max_items": 60
   }
 }

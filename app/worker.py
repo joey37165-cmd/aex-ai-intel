@@ -8,8 +8,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.adapters.langfuse.prompts import build_prompt_provider
-from app.adapters.llm.deepseek import RuleBasedAnalyzer, build_analyzer
+from app.adapters.langfuse.prompts import build_digest_prompt_provider, build_prompt_provider
+from app.adapters.llm.deepseek import RuleBasedAnalyzer, build_analyzer, build_digest_generator
 from app.adapters.sources.rss import RSSSourceAdapter
 from app.adapters.sources.changelog import DocusaurusChangelogSourceAdapter
 from app.adapters.sources.email import EmailSourceAdapter
@@ -19,6 +19,7 @@ from app.adapters.sources.gemini_changelog import GeminiChangelogSourceAdapter
 from app.adapters.sources.x import XSourceAdapter
 from app.adapters.telegram.bot import build_notifier
 from app.application.pipeline import process_item, render_digest, render_message, send_pending
+from app.application.reports import run_reports_tick
 from app.domain.models import AnalysisResult, ContentItem, DigestReport
 from app.domain.policies import NotificationPolicy
 from app.infrastructure.store import SQLiteStore
@@ -29,6 +30,7 @@ from app.ports.interfaces import ContentEnricher
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = ROOT / "config" / "sources.json"
 DEFAULT_PUBLISHING_CONFIG = ROOT / "config" / "publishing.json"
+DEFAULT_REPORT_CONFIG = ROOT / "config" / "reports.json"
 DEFAULT_DB = ROOT / "data" / "runtime.db"
 STOP = False
 
@@ -130,9 +132,20 @@ def run_once(
     return {"discovered": discovered, "analyzed": analyzed, "sent": sent, "errors": errors}
 
 
-def daemon(store: SQLiteStore, sources: list[dict], analyzer, notifier, notification_policy: NotificationPolicy) -> None:
+def daemon(
+    store: SQLiteStore,
+    sources: list[dict],
+    analyzer,
+    notifier,
+    notification_policy: NotificationPolicy,
+    report_config: dict,
+    digest_generator,
+) -> None:
     interval = int(os.environ.get("WORKER_TICK_SECONDS", "15"))
     while not STOP:
+        report_result = run_reports_tick(store, report_config, digest_generator, notifier)
+        if any(report_result.values()):
+            print(f"[INFO] reports={report_result}")
         result = run_daemon_tick(store, sources, analyzer, notifier, notification_policy)
         if result is not None:
             print(f"[INFO] run={result}")
@@ -165,6 +178,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Aex AI 情报自动推送 Worker")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--publishing-config", type=Path, default=DEFAULT_PUBLISHING_CONFIG)
+    parser.add_argument("--report-config", type=Path, default=DEFAULT_REPORT_CONFIG)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--once", action="store_true", help="运行一轮")
     parser.add_argument("--bootstrap", action="store_true", help="建立历史基线，不发送")
@@ -176,9 +190,11 @@ def main() -> int:
     parser.add_argument("--prompt-status", action="store_true", help="检查当前 Prompt 来源和版本")
     parser.add_argument("--preview-template", action="store_true", help="预览 Telegram HTML 模板，不发送")
     parser.add_argument("--preview-digest", action="store_true", help="预览日报/周报共用模板，不发送")
+    parser.add_argument("--reports-once", action="store_true", help="立即处理当前到期的日报/周报")
     args = parser.parse_args()
     sources = load_sources(args.config)
     notification_policy = load_notification_policy(args.publishing_config)
+    report_config = json.loads(args.report_config.read_text(encoding="utf-8"))
     store = SQLiteStore(args.db)
     if args.status:
         print(json.dumps(store.status_summary(), ensure_ascii=False, indent=2))
@@ -190,8 +206,14 @@ def main() -> int:
         store.close()
         return 0
     if args.prompt_status:
-        _, version = build_prompt_provider().get_prompt()
-        print(json.dumps({"prompt_version": version, "remote": version.startswith("langfuse:")}, ensure_ascii=False, indent=2))
+        _, filter_version = build_prompt_provider().get_prompt()
+        _, digest_version = build_digest_prompt_provider().get_prompt()
+        print(json.dumps({
+            "filter_prompt_version": filter_version,
+            "filter_remote": filter_version.startswith("langfuse:"),
+            "digest_prompt_version": digest_version,
+            "digest_remote": digest_version.startswith("langfuse:"),
+        }, ensure_ascii=False, indent=2))
         store.close()
         return 0
     if args.preview_template:
@@ -222,6 +244,11 @@ def main() -> int:
         print(render_digest(report))
         store.close()
         return 0
+    if args.reports_once:
+        result = run_reports_tick(store, report_config, build_digest_generator(), build_notifier())
+        print(f"[INFO] reports={result}")
+        store.close()
+        return 0
     analyzer = RuleBasedAnalyzer() if args.bootstrap else build_analyzer()
     notifier = None if args.bootstrap or args.dry_run else build_notifier()
 
@@ -239,7 +266,15 @@ def main() -> int:
             if store.item_count() == 0:
                 print("[INFO] empty database; establishing baseline without sending")
                 print(f"[INFO] bootstrap={run_once(store, sources, analyzer, baseline=True)}")
-            daemon(store, sources, analyzer, notifier, notification_policy)
+            daemon(
+                store,
+                sources,
+                analyzer,
+                notifier,
+                notification_policy,
+                report_config,
+                build_digest_generator(),
+            )
         else:
             if store.item_count() == 0:
                 print("[INFO] empty database; establishing baseline without sending")

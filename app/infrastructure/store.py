@@ -48,6 +48,14 @@ class SQLiteStore:
                 source_id TEXT PRIMARY KEY, last_attempt_at TEXT, last_success_at TEXT,
                 next_poll_at TEXT, last_item_count INTEGER NOT NULL DEFAULT 0, last_error TEXT
             );
+            CREATE TABLE IF NOT EXISTS reports (
+                report_id TEXT PRIMARY KEY, report_type TEXT NOT NULL,
+                period_start TEXT NOT NULL, period_end TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+                payload_json TEXT, prompt_version TEXT,
+                telegram_message_id TEXT, last_error TEXT, next_attempt_at TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
             """
         )
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(analyses)")}
@@ -117,6 +125,74 @@ class SQLiteStore:
               next_poll_at=excluded.next_poll_at, last_item_count=excluded.last_item_count,
               last_error=excluded.last_error""",
             (source_id, now.isoformat(), None if error else now.isoformat(), next_poll, item_count, error[:500] if error else None),
+        )
+        self.connection.commit()
+
+    def report_candidates(self, period_start: str, period_end: str, limit: int = 40) -> list[sqlite3.Row]:
+        limit = max(1, min(limit, 100))
+        return list(self.connection.execute(
+            """SELECT i.item_id, i.source_name, i.title, i.url,
+            a.category, a.priority, a.summary, a.why_it_matters,
+            COALESCE(i.published_at, i.discovered_at) AS occurred_at
+            FROM analyses a JOIN items i ON i.item_id=a.item_id
+            WHERE a.decision='notify' AND a.priority IN ('S', 'A')
+              AND julianday(COALESCE(i.published_at, i.discovered_at)) >= julianday(?)
+              AND julianday(COALESCE(i.published_at, i.discovered_at)) < julianday(?)
+            ORDER BY CASE a.priority WHEN 'S' THEN 0 ELSE 1 END,
+                     julianday(COALESCE(i.published_at, i.discovered_at)) DESC
+            LIMIT ?""",
+            (period_start, period_end, limit),
+        ))
+
+    def ensure_report(self, report_id: str, report_type: str, period_start: str, period_end: str) -> sqlite3.Row:
+        now = utc_now()
+        self.connection.execute(
+            """INSERT OR IGNORE INTO reports
+            (report_id, report_type, period_start, period_end, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (report_id, report_type, period_start, period_end, now, now),
+        )
+        self.connection.commit()
+        return self.report(report_id)
+
+    def report(self, report_id: str) -> sqlite3.Row:
+        row = self.connection.execute("SELECT * FROM reports WHERE report_id=?", (report_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"未知报告: {report_id}")
+        return row
+
+    def retryable_reports(self) -> list[sqlite3.Row]:
+        return list(self.connection.execute(
+            """SELECT * FROM reports
+            WHERE status IN ('pending', 'ready')
+               OR (status='retry' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
+            ORDER BY period_end ASC""",
+            (utc_now(),),
+        ))
+
+    def save_report_payload(self, report_id: str, payload: dict, prompt_version: str) -> None:
+        self.connection.execute(
+            """UPDATE reports SET status='ready', payload_json=?, prompt_version=?,
+            last_error=NULL, next_attempt_at=NULL, updated_at=? WHERE report_id=?""",
+            (json.dumps(payload, ensure_ascii=False), prompt_version, utc_now(), report_id),
+        )
+        self.connection.commit()
+
+    def mark_report_sent(self, report_id: str, message_id: str) -> None:
+        self.connection.execute(
+            """UPDATE reports SET status='sent', telegram_message_id=?, last_error=NULL,
+            next_attempt_at=NULL, updated_at=? WHERE report_id=?""",
+            (message_id, utc_now(), report_id),
+        )
+        self.connection.commit()
+
+    def mark_report_retry(self, report_id: str, error: str, attempts: int) -> None:
+        delay = min(3600, 2 ** min(attempts, 10))
+        next_attempt = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+        self.connection.execute(
+            """UPDATE reports SET status='retry', attempts=?, last_error=?,
+            next_attempt_at=?, updated_at=? WHERE report_id=?""",
+            (attempts, error[:500], next_attempt, utc_now(), report_id),
         )
         self.connection.commit()
 
@@ -206,6 +282,14 @@ class SQLiteStore:
         priority_rows = self.connection.execute(
             "SELECT priority, COUNT(*) AS count FROM analyses GROUP BY priority"
         ).fetchall()
+        report_rows = self.connection.execute(
+            "SELECT status, COUNT(*) AS count FROM reports GROUP BY status"
+        ).fetchall()
+        latest_report = self.connection.execute(
+            """SELECT report_id, report_type, period_start, period_end, status, attempts,
+            telegram_message_id, last_error, prompt_version, updated_at
+            FROM reports ORDER BY period_end DESC LIMIT 1"""
+        ).fetchone()
         latest = self.connection.execute(
             """SELECT started_at, finished_at, discovered_count, analyzed_count,
             sent_count, error_count, last_error FROM job_runs ORDER BY id DESC LIMIT 1"""
@@ -220,6 +304,8 @@ class SQLiteStore:
             "analysis_decisions": {row["decision"]: row["count"] for row in decision_rows},
             "analysis_priorities": {row["priority"]: row["count"] for row in priority_rows},
             "deliveries": {row["status"]: row["count"] for row in delivery_rows},
+            "reports": {row["status"]: row["count"] for row in report_rows},
+            "latest_report": dict(latest_report) if latest_report else None,
             "latest_job": dict(latest) if latest else None,
             "sources": [dict(row) for row in source_rows],
         }

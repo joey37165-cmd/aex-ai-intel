@@ -6,8 +6,12 @@ import re
 import urllib.request
 from typing import Any
 
-from app.adapters.langfuse.prompts import PromptProvider, build_prompt_provider
-from app.domain.models import AnalysisResult, ContentItem
+from app.adapters.langfuse.prompts import (
+    PromptProvider,
+    build_digest_prompt_provider,
+    build_prompt_provider,
+)
+from app.domain.models import AnalysisResult, ContentItem, DigestCandidate, DigestReport, ReportWindow
 
 
 def _clean_text(value: Any, fallback: str, limit: int) -> str:
@@ -44,6 +48,63 @@ def _result(data: dict[str, Any], item: ContentItem) -> AnalysisResult:
     )
 
 
+def _chat_json(api_key: str, model: str, base_url: str, timeout: float, messages: list[dict[str, str]]) -> dict:
+    payload = {
+        "model": model,
+        "temperature": 0.1,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+    }
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Aex-AI-Intel/0.1",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    content = body["choices"][0]["message"]["content"]
+    content = re.sub(r"^```(?:json)?|```$", "", content.strip()).strip()
+    result = json.loads(content)
+    if not isinstance(result, dict):
+        raise ValueError("DeepSeek 结构化输出必须是 JSON 对象")
+    return result
+
+
+def _digest_lines(value: Any, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    lines: list[str] = []
+    for entry in value[:limit]:
+        text = _clean_text(entry, "", 180)
+        if text:
+            lines.append(text)
+    return lines
+
+
+def _numbered(lines: list[str], empty: str) -> str:
+    return "\n".join(f"{index}. {line}" for index, line in enumerate(lines, start=1)) or empty
+
+
+def _digest_result(data: dict[str, Any], window: ReportWindow, item_count: int) -> DigestReport:
+    max_items = 8 if window.report_type == "weekly" else 5
+    frontier = _digest_lines(data.get("frontier_items"), max_items)
+    applications = _digest_lines(data.get("application_items"), max_items)
+    report_title = "AI 周报" if window.report_type == "weekly" else "AI 日报"
+    return DigestReport(
+        report_title=report_title,
+        period_label="",
+        overview=_clean_text(data.get("overview"), f"本周期共整理 {item_count} 条高价值 AI 情报。", 350),
+        frontier_items=_numbered(frontier, "本周期暂无值得单独列出的前沿更新。"),
+        application_items=_numbered(applications, "本周期暂无值得单独列出的应用更新。"),
+        key_takeaways=_clean_text(data.get("key_takeaways"), "本周期暂无更多综合观察。", 600),
+    )
+
+
 class DeepSeekAnalyzer:
     def __init__(
         self,
@@ -75,23 +136,53 @@ class DeepSeekAnalyzer:
             {"role": message["role"], "content": message["content"].replace("{{content_json}}", content_json)}
             for message in prompt_messages
         ]
-        payload = {
-            "model": self.model,
-            "temperature": 0.1,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-        }
-        request = urllib.request.Request(
-            f"{self.base_url}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json", "User-Agent": "Aex-AI-Intel/0.1"},
-            method="POST",
+        return _result(_chat_json(self.api_key, self.model, self.base_url, self.timeout, messages), item)
+
+
+class DeepSeekDigestGenerator:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str,
+        timeout: float = 60.0,
+        prompt_provider: PromptProvider | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.prompt_version = os.environ.get("DIGEST_PROMPT_VERSION", "local-v1")
+        self.prompt_provider = prompt_provider or build_digest_prompt_provider()
+
+    def generate(self, window: ReportWindow, items: list[DigestCandidate]) -> DigestReport:
+        if not items:
+            return RuleBasedDigestGenerator().generate(window, items)
+        prompt_messages, self.prompt_version = self.prompt_provider.get_prompt()
+        content_json = json.dumps({
+            "report_type": window.report_type,
+            "period_start": window.period_start.isoformat(),
+            "period_end": window.period_end.isoformat(),
+            "items": [{
+                "index": index,
+                "source": item.source_name,
+                "category": item.category,
+                "priority": item.priority,
+                "occurred_at": item.occurred_at.isoformat(),
+                "title": item.title,
+                "summary": item.summary[:500],
+                "why_it_matters": item.why_it_matters[:500],
+            } for index, item in enumerate(items, start=1)],
+        }, ensure_ascii=False)
+        messages = [
+            {"role": message["role"], "content": message["content"].replace("{{content_json}}", content_json)}
+            for message in prompt_messages
+        ]
+        return _digest_result(
+            _chat_json(self.api_key, self.model, self.base_url, self.timeout, messages),
+            window,
+            len(items),
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        content = body["choices"][0]["message"]["content"]
-        content = re.sub(r"^```(?:json)?|```$", "", content.strip()).strip()
-        return _result(json.loads(content), item)
 
 
 class RuleBasedAnalyzer:
@@ -115,6 +206,28 @@ class RuleBasedAnalyzer:
         )
 
 
+class RuleBasedDigestGenerator:
+    prompt_version = "digest-rules-v1"
+
+    def generate(self, window: ReportWindow, items: list[DigestCandidate]) -> DigestReport:
+        max_items = 8 if window.report_type == "weekly" else 5
+
+        def lines(category: str) -> list[str]:
+            selected = [item for item in items if item.category == category][:max_items]
+            return [_clean_text(f"{item.title}：{item.summary}", item.title, 180) for item in selected]
+
+        frontier = lines("AI 前沿信息")
+        applications = lines("AI 应用")
+        return DigestReport(
+            report_title="AI 周报" if window.report_type == "weekly" else "AI 日报",
+            period_label="",
+            overview=f"本周期共整理 {len(items)} 条高价值 AI 情报。" if items else "本周期暂无符合推送标准的高价值 AI 情报。",
+            frontier_items=_numbered(frontier, "本周期暂无值得单独列出的前沿更新。"),
+            application_items=_numbered(applications, "本周期暂无值得单独列出的应用更新。"),
+            key_takeaways="高价值信息以报告所列条目为准，后续可结合原文继续跟踪。" if items else "本周期暂无更多综合观察。",
+        )
+
+
 def build_analyzer():
     mode = os.environ.get("AI_MODE", "deepseek").strip().lower()
     if mode == "rules":
@@ -131,3 +244,19 @@ def build_analyzer():
             base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         )
     raise RuntimeError("无法创建 DeepSeek 分析器")
+
+
+def build_digest_generator():
+    mode = os.environ.get("AI_MODE", "deepseek").strip().lower()
+    if mode == "rules":
+        return RuleBasedDigestGenerator()
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if mode != "deepseek":
+        raise RuntimeError(f"不支持的 AI_MODE: {mode}")
+    if not api_key:
+        raise RuntimeError("AI_MODE=deepseek 时必须配置 DEEPSEEK_API_KEY")
+    return DeepSeekDigestGenerator(
+        api_key=api_key,
+        model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    )

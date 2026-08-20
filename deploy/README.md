@@ -83,6 +83,13 @@ cd /opt/aex-ai-intel
 sudo -u aex-ai .venv/bin/python -m app.worker --db data/runtime.db --status
 ```
 
+立即处理当前到期的日报/周报（部署验证使用，常驻服务会自动调度）：
+
+```bash
+cd /opt/aex-ai-intel
+sudo -u aex-ai .venv/bin/python -m app.worker --db data/runtime.db --reports-once
+```
+
 ## 6. 更新代码
 
 ```bash
