@@ -88,7 +88,10 @@ def run_once(
             not baseline
             and bool(source.get("baseline_on_first_poll", False))
             and store.item_count() > 0
-            and not store.source_state_exists(source["id"])
+            and (
+                not store.source_state_exists(source["id"])
+                or store.source_has_never_succeeded(source["id"])
+            )
         )
         source_item_count = 0
         source_error = None

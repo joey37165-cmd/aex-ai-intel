@@ -97,6 +97,30 @@ class WorkerTests(unittest.TestCase):
         adapter.enrich.assert_not_called()
         self.assertEqual(self.store.item_status("anthropic-one"), "baselined")
 
+    @patch("app.worker.build_source_adapter")
+    def test_source_recovery_baselines_after_previous_failures(self, build_adapter):
+        candidate = ContentItem(
+            item_id="openai-recovered", source_id="openai", source_name="OpenAI Changelog",
+            category="模型与 API 更新", title="historical update",
+            url="https://developers.openai.com/api/docs/changelog", summary="", published_at=None,
+        )
+        adapter = Mock()
+        adapter.fetch.return_value = [candidate]
+        build_adapter.return_value = adapter
+        self.store.save_item(ContentItem(
+            item_id="existing", source_id="existing", source_name="Existing",
+            category="其他", title="Existing", url="https://example.com/existing",
+            summary="", published_at=None,
+        ), status="baselined")
+        self.store.mark_source_result("openai", 1, 0, "HTTP 403")
+        source = {"id": "openai", "source_type": "openai_changelog",
+                  "baseline_on_first_poll": True, "poll_interval_minutes": 1}
+
+        result = run_once(self.store, [source], Mock(), Mock())
+
+        self.assertEqual(result, {"discovered": 1, "analyzed": 0, "sent": 0, "errors": 0})
+        self.assertEqual(self.store.item_status("openai-recovered"), "baselined")
+
 
 if __name__ == "__main__":
     unittest.main()

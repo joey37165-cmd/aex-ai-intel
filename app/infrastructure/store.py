@@ -97,6 +97,12 @@ class SQLiteStore:
         row = self.connection.execute("SELECT 1 FROM source_state WHERE source_id=?", (source_id,)).fetchone()
         return row is not None
 
+    def source_has_never_succeeded(self, source_id: str) -> bool:
+        row = self.connection.execute(
+            "SELECT last_success_at FROM source_state WHERE source_id=?", (source_id,)
+        ).fetchone()
+        return row is not None and row["last_success_at"] is None
+
     def mark_source_result(self, source_id: str, interval_minutes: int, item_count: int, error: str | None = None) -> None:
         now = datetime.now(timezone.utc)
         retry_minutes = min(5, interval_minutes) if error else interval_minutes
