@@ -119,7 +119,7 @@ def _creator_x_link() -> str:
     value = os.environ.get("CREATOR_X_URL", "").strip() or "https://x.com/axe0x0"
     if not value.startswith(("https://x.com/", "https://twitter.com/")):
         return ""
-    return f'<a href="{html.escape(value, quote=True)}">𝕏 我的 X</a>'
+    return f'<a href="{html.escape(value, quote=True)}">𝕏 Aex0x0</a>'
 
 
 def _links_line(article_url: str) -> str:

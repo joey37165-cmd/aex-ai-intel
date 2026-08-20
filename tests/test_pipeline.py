@@ -122,7 +122,7 @@ class PipelineTests(unittest.TestCase):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         with patch.dict(os.environ, {"CREATOR_X_URL": "https://x.com/aex"}, clear=False):
             text = render_message(item(), result)
-        self.assertIn('<a href="https://example.com/one">🔗 阅读原文</a> · <a href="https://x.com/aex">𝕏 我的 X</a>', text)
+        self.assertIn('<a href="https://example.com/one">🔗 阅读原文</a> · <a href="https://x.com/aex">𝕏 Aex0x0</a>', text)
 
     def test_render_uses_translated_title_without_emoji(self):
         result = AnalysisResult(
