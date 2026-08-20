@@ -31,6 +31,7 @@ class SQLiteStore:
                 item_id TEXT PRIMARY KEY REFERENCES items(item_id), decision TEXT NOT NULL,
                 priority TEXT NOT NULL, category TEXT NOT NULL, summary TEXT NOT NULL,
                 why_it_matters TEXT NOT NULL, suggested_action TEXT NOT NULL, confidence REAL NOT NULL,
+                display_title TEXT NOT NULL DEFAULT '',
                 raw_json TEXT NOT NULL, model_name TEXT NOT NULL DEFAULT 'unknown',
                 prompt_version TEXT NOT NULL DEFAULT 'unknown', created_at TEXT NOT NULL
             );
@@ -59,9 +60,10 @@ class SQLiteStore:
             """
         )
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(analyses)")}
-        for column in ("model_name", "prompt_version"):
+        for column in ("model_name", "prompt_version", "display_title"):
             if column not in columns:
-                self.connection.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT NOT NULL DEFAULT 'unknown'")
+                default = "''" if column == "display_title" else "'unknown'"
+                self.connection.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT NOT NULL DEFAULT {default}")
         item_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(items)")}
         if "image_url" not in item_columns:
             self.connection.execute("ALTER TABLE items ADD COLUMN image_url TEXT")
@@ -200,14 +202,15 @@ class SQLiteStore:
         self.connection.execute(
             """INSERT INTO analyses
             (item_id, decision, priority, category, summary, why_it_matters, suggested_action,
-             confidence, raw_json, model_name, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             confidence, display_title, raw_json, model_name, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(item_id) DO UPDATE SET decision=excluded.decision, priority=excluded.priority,
             category=excluded.category, summary=excluded.summary, why_it_matters=excluded.why_it_matters,
             suggested_action=excluded.suggested_action, confidence=excluded.confidence,
+            display_title=excluded.display_title,
             raw_json=excluded.raw_json, model_name=excluded.model_name,
             prompt_version=excluded.prompt_version, created_at=excluded.created_at""",
             (item_id, result.decision, result.priority, result.category, result.summary,
-             result.why_it_matters, result.suggested_action, result.confidence,
+             result.why_it_matters, result.suggested_action, result.confidence, result.display_title,
              json.dumps(result.raw, ensure_ascii=False), model_name, prompt_version, utc_now()),
         )
         self.connection.execute("UPDATE items SET status=? WHERE item_id=?", (result.decision, item_id))
@@ -223,7 +226,7 @@ class SQLiteStore:
         return list(self.connection.execute(
             """SELECT d.*, i.source_name, i.category, i.title, i.url, i.summary, i.published_at, i.image_url,
             a.category AS analysis_category, a.summary AS analysis_summary, a.priority,
-            a.why_it_matters, a.suggested_action FROM deliveries d
+            a.why_it_matters, a.suggested_action, a.display_title FROM deliveries d
             JOIN items i ON i.item_id=d.item_id JOIN analyses a ON a.item_id=d.item_id
             WHERE d.status='pending' OR (d.status='retry' AND
             (d.next_attempt_at IS NULL OR d.next_attempt_at <= ?)) ORDER BY i.published_at ASC""", (utc_now(),)
@@ -234,7 +237,7 @@ class SQLiteStore:
         return list(self.connection.execute(
             """SELECT i.item_id, i.source_name, i.title, i.url, i.published_at,
             a.priority, a.category, a.summary, a.why_it_matters, a.suggested_action,
-            a.confidence, a.model_name, a.prompt_version, a.created_at
+            a.confidence, a.model_name, a.prompt_version, a.display_title, a.created_at
             FROM analyses a JOIN items i ON i.item_id=a.item_id
             WHERE a.decision='review'
             ORDER BY COALESCE(i.published_at, i.discovered_at) DESC LIMIT ?""", (limit,)

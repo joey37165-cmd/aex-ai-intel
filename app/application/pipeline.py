@@ -12,6 +12,31 @@ from app.infrastructure.store import SQLiteStore
 
 
 CHINA_TIMEZONE = timezone(timedelta(hours=8))
+_EMOJI_RE = re.compile(
+    "["
+    "\\U0001F1E6-\\U0001F1FF"  # flags
+    "\\U0001F300-\\U0001FAFF"  # pictographs and symbols
+    "\\U00002300-\\U000023FF"  # technical symbols
+    "\\U000025A0-\\U000027BF"  # shapes and dingbats
+    "\\U00002B00-\\U00002BFF"  # miscellaneous symbols
+    "\\u200d\\ufe0f\\u20e3"
+    "]+"
+)
+
+
+def clean_display_title(value: str, limit: int = 300) -> str:
+    text = _EMOJI_RE.sub("", value or "")
+    text = re.sub(r"(?:\[\s*\]|【\s*】|\(\s*\)|（\s*）)", "", text)
+    text = re.sub(r"\\s+", " ", text).strip(" -|:：")
+    if len(text) > limit:
+        text = f"{text[:limit - 1].rstrip()}…"
+    return text or "AI 情报更新"
+
+
+def normalize_category(value: str) -> str:
+    text = str(value or "").strip().lower()
+    app_terms = ("应用", "工具", "agent", "工作流", "workflow", "github", "变现")
+    return "AI 应用" if any(term in text for term in app_terms) else "AI 前沿信息"
 
 
 def format_time(value: str | None) -> str:
@@ -40,8 +65,8 @@ def render_message(item: ContentItem, result: AnalysisResult, template_path: Pat
     published = item.published_at.isoformat() if item.published_at else None
     values = {
         "header": esc(result.category),
-        "category_line": esc(result.category),
-        "title": esc(item.title, 300), "summary": esc(result.summary, 240),
+        "category_line": esc(normalize_category(result.category)),
+        "title": esc(clean_display_title(result.display_title or item.title)), "summary": esc(result.summary, 240),
         "why_it_matters": esc(result.why_it_matters), "suggested_action": esc(result.suggested_action),
         "source": esc(item.source_name, 100), "time": format_time(published),
         "url": html.escape(item.url, quote=True),
@@ -52,7 +77,7 @@ def render_message(item: ContentItem, result: AnalysisResult, template_path: Pat
     try:
         template = path.read_text(encoding="utf-8")
     except OSError:
-        template = "<b>【{category_line}】 {title}</b>\n\n{summary}\n\n<b>为什么值得关注</b>\n{why_it_matters}\n\n{links_line}"
+        template = "<b>【{category_line}】{title}</b>\n\n{summary}\n\n<b>【重点】</b>\n{why_it_matters}\n\n{links_line}"
     return template.format(**values)
 
 
@@ -91,14 +116,14 @@ def render_digest(report: DigestReport, template_path: Path | None = None) -> st
 
 
 def _creator_x_link() -> str:
-    value = os.environ.get("CREATOR_X_URL", "").strip()
+    value = os.environ.get("CREATOR_X_URL", "").strip() or "https://x.com/axe0x0"
     if not value.startswith(("https://x.com/", "https://twitter.com/")):
         return ""
-    return f'<a href="{html.escape(value, quote=True)}">我的 X</a>'
+    return f'<a href="{html.escape(value, quote=True)}">𝕏 我的 X</a>'
 
 
 def _links_line(article_url: str) -> str:
-    original = f'<a href="{html.escape(article_url, quote=True)}">阅读原文</a>'
+    original = f'<a href="{html.escape(article_url, quote=True)}">🔗 阅读原文</a>'
     creator = _creator_x_link()
     return f"{original} · {creator}" if creator else original
 
@@ -160,6 +185,7 @@ def send_pending(store: SQLiteStore, notifier) -> int:
             decision="notify", priority=row["priority"], category=row["analysis_category"],
             summary=row["analysis_summary"], why_it_matters=row["why_it_matters"],
             suggested_action=row["suggested_action"], confidence=1.0,
+            display_title=row["display_title"] or row["title"],
         )
         try:
             message_id = deliver_message(notifier, item, render_message(item, result))

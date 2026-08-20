@@ -110,19 +110,28 @@ class PipelineTests(unittest.TestCase):
     def test_render_uses_beijing_time(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         text = render_message(item(), result)
-        self.assertIn("【模型】 New model release", text)
+        self.assertIn("【AI 前沿信息】New model release", text)
         self.assertNotIn("S级", text)
         self.assertNotIn("建议动作", text)
         self.assertNotIn("来源：", text)
         self.assertNotIn("北京时间", text)
-        self.assertIn("<b>为什么值得关注</b>", text)
-        self.assertIn("<a href=\"https://example.com/one\">阅读原文</a>", text)
+        self.assertIn("<b>【重点】</b>", text)
+        self.assertIn("<a href=\"https://example.com/one\">🔗 阅读原文</a>", text)
 
     def test_render_includes_configured_creator_x_link(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         with patch.dict(os.environ, {"CREATOR_X_URL": "https://x.com/aex"}, clear=False):
             text = render_message(item(), result)
-        self.assertIn('<a href="https://example.com/one">阅读原文</a> · <a href="https://x.com/aex">我的 X</a>', text)
+        self.assertIn('<a href="https://example.com/one">🔗 阅读原文</a> · <a href="https://x.com/aex">𝕏 我的 X</a>', text)
+
+    def test_render_uses_translated_title_without_emoji(self):
+        result = AnalysisResult(
+            "notify", "S", "AI 前沿信息", "摘要", "价值", "查看", 0.9,
+            display_title="🚀 Claude 4.1 发布：更强的 Agent 能力",
+        )
+        text = render_message(item(title="🚀 Claude 4.1 released"), result)
+        self.assertIn("【AI 前沿信息】Claude 4.1 发布：更强的 Agent 能力", text)
+        self.assertNotIn("🚀", text)
 
     def test_item_with_image_uses_photo_delivery(self):
         photo_item = ContentItem(

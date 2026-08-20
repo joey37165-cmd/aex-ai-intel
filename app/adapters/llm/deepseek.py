@@ -45,6 +45,7 @@ def _result(data: dict[str, Any], item: ContentItem) -> AnalysisResult:
         suggested_action=_clean_text(data.get("suggested_action"), "查看原文", 80),
         confidence=confidence,
         raw=data,
+        display_title=_clean_text(data.get("display_title", data.get("title")), item.title, 180),
     )
 
 
@@ -203,6 +204,7 @@ class RuleBasedAnalyzer:
             why_it_matters="规则模式命中 AI 主题关键词，请查看原文核验。" if matches else "未命中当前主题规则。",
             suggested_action="查看原文" if matches else "忽略", confidence=0.8,
             raw={"mode": "rules", "matches": matches},
+            display_title=item.title,
         )
 
 

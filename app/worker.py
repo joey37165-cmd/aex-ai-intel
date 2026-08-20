@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import signal
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -174,6 +175,8 @@ def run_daemon_tick(
 
 def main() -> int:
     global STOP
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Aex AI 情报自动推送 Worker")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)

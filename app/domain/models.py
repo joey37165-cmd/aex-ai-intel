@@ -29,6 +29,7 @@ class AnalysisResult:
     suggested_action: str
     confidence: float
     raw: dict[str, Any] = field(default_factory=dict)
+    display_title: str = ""
 
 
 @dataclass(frozen=True)
