@@ -28,11 +28,12 @@ sudo -u aex-ai git clone \
 
 ## 3. 创建 Python 环境和服务器配置
 
-当前 MVP 只使用 Python 标准库，不需要安装第三方 Python 包：
+创建虚拟环境并安装 Worker 与管理 API 依赖：
 
 ```bash
 cd /opt/aex-ai-intel
 sudo -u aex-ai python3 -m venv .venv
+sudo -u aex-ai .venv/bin/pip install -r requirements.txt
 sudo -u aex-ai cp .env.example .env
 sudoedit /opt/aex-ai-intel/.env
 sudo chmod 600 /opt/aex-ai-intel/.env
@@ -48,9 +49,27 @@ AI_MODE=deepseek
 DEEPSEEK_API_KEY=
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
+ADMIN_API_TOKEN=请填写至少32个字符的随机值
+RUNTIME_DB_PATH=data/runtime.db
 ```
 
 如果启用 Langfuse 或 TLDR AI Email，再填写对应的 Langfuse/Gmail 配置。密钥只保存在服务器 `/opt/aex-ai-intel/.env`，不要提交到 GitHub。
+
+生成管理 Token：
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+### 构建模板管理前端
+
+服务器需要 Node.js 20.19+。安装 Node.js 后执行：
+
+```bash
+cd /opt/aex-ai-intel/web
+sudo -u aex-ai npm ci
+sudo -u aex-ai npm run build
+```
 
 ## 4. 首次建立历史基线
 
@@ -65,10 +84,21 @@ sudo -u aex-ai .venv/bin/python -m app.worker --db data/runtime.db --bootstrap
 
 ```bash
 sudo cp deploy/ai-intel-worker.service /etc/systemd/system/ai-intel-worker.service
+sudo cp deploy/ai-intel-api.service /etc/systemd/system/ai-intel-api.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now ai-intel-worker
+sudo systemctl enable --now ai-intel-api
 sudo systemctl status ai-intel-worker --no-pager
+sudo systemctl status ai-intel-api --no-pager
 ```
+
+管理 API 只监听服务器 `127.0.0.1:8000`，不要在安全组中开放 8000 端口。在本机 PowerShell 建立 SSH 隧道：
+
+```powershell
+ssh -L 8000:127.0.0.1:8000 admin@47.82.154.127
+```
+
+保持该 SSH 窗口运行，然后打开 `http://localhost:8000/`，输入服务器 `.env` 中的 `ADMIN_API_TOKEN`。
 
 查看实时日志：
 
@@ -95,9 +125,16 @@ sudo -u aex-ai .venv/bin/python -m app.worker --db data/runtime.db --reports-onc
 ```bash
 cd /opt/aex-ai-intel
 sudo systemctl stop ai-intel-worker
+sudo systemctl stop ai-intel-api
 sudo -u aex-ai git -C /opt/aex-ai-intel pull --ff-only origin main
+sudo -u aex-ai /opt/aex-ai-intel/.venv/bin/pip install -r requirements.txt
+cd /opt/aex-ai-intel/web
+sudo -u aex-ai npm ci
+sudo -u aex-ai npm run build
 sudo systemctl start ai-intel-worker
+sudo systemctl start ai-intel-api
 sudo journalctl -u ai-intel-worker -n 50 --no-pager
+sudo journalctl -u ai-intel-api -n 50 --no-pager
 ```
 
 更新代码不会覆盖服务器 `.env` 和 `data/runtime.db`。
