@@ -115,7 +115,7 @@ urllib.request      外部 HTTP 调用的第一版实现
 FastAPI + Uvicorn   私有模板管理 API 和前端静态文件
 ```
 
-这些实现都位于适配器或基础设施边界内，Domain 和 Application 不依赖具体库。正式服务器部署前再引入 SQLAlchemy/Alembic、httpx 和调度库，并为替换增加集成测试；不会把临时代码散落到业务层。
+这些实现都位于适配器或基础设施边界内，Domain 和 Application 不依赖具体库。后续只有在迁移、并发或可观测性需求明确时才引入 SQLAlchemy/Alembic、httpx 和调度库，并为替换增加集成测试；不会为了技术栈表而提前增加小服务器的维护负担。
 
 ## 尚未确定
 

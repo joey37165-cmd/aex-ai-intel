@@ -63,7 +63,16 @@ python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
 
 ### 构建模板管理前端
 
-服务器需要 Node.js 20.19+。安装 Node.js 后执行：
+服务器需要 Node.js 20.19+。Ubuntu 24.04 可以安装 Node.js 22 LTS：
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+node --version
+npm --version
+```
+
+然后构建前端：
 
 ```bash
 cd /opt/aex-ai-intel/web

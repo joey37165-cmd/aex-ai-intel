@@ -301,7 +301,7 @@ app/
 1. 完成来源注册、自动采集、去重、AI 结构化筛选、模板渲染、Telegram 自动推送、重试和运行监控。
 2. 加入 Telegram 决策按钮和 GitHub 知识库写入。
 3. 加入手动上传、过期治理和可重建搜索索引。
-4. 实现前端情报流、知识库、搜索、来源和模板管理。
+4. 实现前端情报流、知识库、搜索和来源管理，并扩展现有模板管理能力。
 5. 扩充并评估第三方 X RSS，完善 Email，接入 Langfuse Prompt 管理和评测。
 
 Langfuse 已支持远程 Chat Prompt：在 Langfuse 创建名称为 `ai-intelligence-filter` 的 Chat Prompt，System 消息保存筛选规则，User 消息使用 `{{content_json}}` 接收程序序列化的候选消息，并发布 `production` label；将 `.env` 中 `LANGFUSE_ENABLED=true`、公钥和密钥配置好，Worker 会每 60 秒刷新一次，网络失败自动回退到本地 Prompt。不要把 Langfuse 密钥提交到仓库。
@@ -316,3 +316,4 @@ Email 和 X 适配器已经加入。Email 使用 IMAP 只读模式，需要设�
 - [Telegram 链路验证](Telegram%20链路验证.md)
 - [Agent 开发约束](AGENTS.md)
 - [技术栈](TECH_STACK.md)
+- [服务器部署](deploy/README.md)
