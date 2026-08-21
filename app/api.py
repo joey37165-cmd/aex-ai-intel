@@ -17,6 +17,7 @@ from app.application.templates import (
 )
 from app.infrastructure.config import load_dotenv
 from app.infrastructure.store import SQLiteStore
+from app.ports.repositories import TemplateRepository
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -88,7 +89,7 @@ def _serialize_template(value: dict) -> dict:
     }
 
 
-def _detail_or_404(store: SQLiteStore, template_id: str) -> dict:
+def _detail_or_404(store: TemplateRepository, template_id: str) -> dict:
     detail = store.template_detail(template_id)
     if detail is None or template_id not in TEMPLATE_DEFINITIONS:
         raise HTTPException(status_code=404, detail="模板不存在")

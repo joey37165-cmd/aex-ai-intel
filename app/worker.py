@@ -22,6 +22,7 @@ from app.domain.status import ItemStatus
 from app.infrastructure.store import SQLiteStore
 from app.infrastructure.config import load_dotenv
 from app.ports.interfaces import ContentEnricher
+from app.ports.repositories import WorkerRepository
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,7 +51,7 @@ def load_notification_policy(path: Path) -> NotificationPolicy:
 
 
 def run_once(
-    store: SQLiteStore,
+    store: WorkerRepository,
     sources: list[dict],
     analyzer,
     notifier=None,
@@ -114,7 +115,7 @@ def run_once(
 
 
 def daemon(
-    store: SQLiteStore,
+    store: WorkerRepository,
     sources: list[dict],
     analyzer,
     notifier,

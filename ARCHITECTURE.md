@@ -133,6 +133,8 @@ items、analyses、deliveries、job_runs、source_state、reports、message_temp
 
 当前先保留一个 Store 门面。只有当知识库或并发需求增加后，才按 `ItemRepository`、`DeliveryRepository`、`ReportRepository`、`TemplateRepository` 拆分内部职责，不拆分数据库。
 
+应用层使用 `app/ports/repositories.py` 中按能力划分的接口：实时流程依赖 `NotificationRepository`，报告流程依赖 `ReportRepository`，模板流程依赖 `TemplateRepository`。当前 `SQLiteStore` 同时实现这些接口，但上层不再依赖它的具体类型。
+
 ### 3.8 知识库模块（规划中）
 
 知识库不进入实时推送主流程，未来通过 Telegram 决策进入独立服务：

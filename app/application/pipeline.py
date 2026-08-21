@@ -10,8 +10,8 @@ from pathlib import Path
 from app.domain.models import AnalysisResult, ContentItem, DigestReport, ProcessOutcome
 from app.domain.policies import NotificationPolicy
 from app.domain.status import ItemStatus
-from app.infrastructure.store import SQLiteStore
 from app.ports.interfaces import TemplateProvider
+from app.ports.repositories import DeliveryRepository, NotificationRepository
 
 
 CHINA_TIMEZONE = timezone(timedelta(hours=8))
@@ -168,7 +168,7 @@ def deliver_message(notifier, item: ContentItem, text: str) -> str:
 
 
 def process_item(
-    store: SQLiteStore,
+    store: NotificationRepository,
     item: ContentItem,
     analyzer,
     notifier=None,
@@ -225,7 +225,7 @@ def process_item(
 
 
 def send_pending(
-    store: SQLiteStore,
+    store: DeliveryRepository,
     notifier,
     template_provider: TemplateProvider | None = None,
 ) -> int:

@@ -5,6 +5,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from string import Formatter
 
+from app.ports.repositories import TemplateRepository
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -116,7 +118,7 @@ def validate_template(template_id: str, content: str) -> str:
     return normalized
 
 
-def seed_templates(store) -> None:
+def seed_templates(store: TemplateRepository) -> None:
     for definition in TEMPLATE_DEFINITIONS.values():
         content = definition.file_path.read_text(encoding="utf-8").strip()
         store.initialize_template(

@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from app.application.pipeline import render_digest
 from app.domain.models import DigestCandidate, DigestReport, ReportWindow
+from app.ports.repositories import ReportRepository
 
 
 WEEKDAYS = {
@@ -127,7 +128,7 @@ def _report_from_payload(value: str) -> DigestReport:
 
 
 def run_reports_tick(
-    store,
+    store: ReportRepository,
     config: dict[str, Any],
     generator,
     notifier,
