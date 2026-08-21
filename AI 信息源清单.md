@@ -71,7 +71,7 @@
 | A | Ars Technica AI | https://arstechnica.com/ai/feed/ | 技术实现、产品分析和政策新闻 | 已核验，已启用 |
 | S | Simon Willison's Weblog | https://simonwillison.net/atom/everything/ | LLM 工程、Agent、工具实测和开发实践 | 已核验，已启用 |
 | S | Interconnects | https://www.interconnects.ai/feed | 模型训练、开源模型和产业判断 | 已核验，已启用 |
-| A | Import AI | https://jack-clark.net/feed/ | AI 研究、政策、算力和产业趋势 | 已核验，已启用 |
+| A | Import AI | https://jack-clark.net/feed/ | AI 研究、政策、算力和产业趋势 | 服务器出口被 WordPress.com 返回 403，RSS 已关闭；等待 Email 正文到达后接入 |
 | S | Ahead of AI | https://magazine.sebastianraschka.com/feed | 模型结构、训练方法和开源实践 | 已核验，已启用 |
 | A | One Useful Thing | https://www.oneusefulthing.org/feed | AI 工作方法、教育和组织应用 | 已核验，已启用 |
 | A | Ben's Bites | https://www.bensbites.com/feed | AI 工具、Agent 和工作流线索 | 已核验，已启用 |

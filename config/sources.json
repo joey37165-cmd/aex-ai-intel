@@ -349,7 +349,7 @@
       "category": "研究、政策与产业趋势",
       "language": "en",
       "priority": "A",
-      "enabled": true,
+      "enabled": false,
       "verified": true,
       "verified_at": "2026-08-19",
       "poll_interval_minutes": 1,
