@@ -203,3 +203,17 @@ def build_digest_prompt_provider() -> PromptProvider:
         prompt_name_default="ai-intelligence-digest",
         prompt_label_env="LANGFUSE_DIGEST_PROMPT_LABEL",
     )
+
+
+def build_dedup_prompt_provider() -> PromptProvider:
+    return _build_prompt_provider(
+        prompt_path_env="DEDUP_PROMPT_PATH",
+        prompt_path_default="config/prompts/intelligence_dedup.md",
+        user_path_env="DEDUP_USER_PROMPT_PATH",
+        user_path_default="config/prompts/intelligence_dedup_user.md",
+        version_env="DEDUP_PROMPT_VERSION",
+        version_default="local-v1",
+        prompt_name_env="LANGFUSE_DEDUP_PROMPT_NAME",
+        prompt_name_default="ai-intelligence-dedup",
+        prompt_label_env="LANGFUSE_DEDUP_PROMPT_LABEL",
+    )

@@ -4,8 +4,9 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
-from app.adapters.llm.deepseek import RuleBasedAnalyzer, _result
+from app.adapters.llm.deepseek import DeepSeekDeduplicationJudge, RuleBasedAnalyzer, _dedup_result, _result
 from app.domain.models import AnalysisResult, ContentItem, EventFeatures
 from app.infrastructure.store import SQLiteStore
 
@@ -24,6 +25,43 @@ def make_item() -> ContentItem:
 
 
 class EventFeatureTests(unittest.TestCase):
+    def test_dedup_result_normalizes_unknown_relationship(self):
+        result = _dedup_result({"relationship": "maybe", "confidence": "bad"})
+        self.assertEqual(result.relationship, "independent")
+        self.assertEqual(result.confidence, 0.0)
+
+    @patch("app.adapters.llm.deepseek._chat_json")
+    def test_deepseek_dedup_judge_sends_both_event_records(self, chat_json):
+        chat_json.return_value = {
+            "relationship": "update", "confidence": 0.88, "reason": "新增 API 能力",
+        }
+
+        class Provider:
+            def get_prompt(self):
+                return ([
+                    {"role": "system", "content": "judge"},
+                    {"role": "user", "content": "{{content_json}}"},
+                ], "langfuse:dedup-7")
+
+        judge = DeepSeekDeduplicationJudge(
+            "key", "deepseek-chat", "https://api.example", prompt_provider=Provider(),
+        )
+        result = _result({"summary": "新摘要", "event": {
+            "event_type": "api_update", "organization": "DeepSeek",
+            "product": "V4", "core_claim": "新增 API 能力",
+        }}, make_item())
+        candidate = {
+            "item_id": "old-item", "source_name": "Old Source", "title": "旧标题",
+            "summary": "旧摘要", "published_at": "2026-08-20T00:00:00+00:00",
+            "event_json": json.dumps({"event_type": "model_release", "product": "V4"}),
+        }
+        decision = judge.judge(make_item(), result, candidate)
+        self.assertEqual(decision.relationship, "update")
+        self.assertEqual(judge.prompt_version, "langfuse:dedup-7")
+        payload = json.loads(chat_json.call_args.args[-1][1]["content"])
+        self.assertEqual(payload["new_item"]["event"]["event_type"], "api_update")
+        self.assertEqual(payload["historical_item"]["event"]["product"], "V4")
+
     def test_result_extracts_and_normalizes_event_features(self):
         result = _result(
             {

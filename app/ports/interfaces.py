@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol, runtime_checkable
 
-from app.domain.models import AnalysisResult, ContentItem, DigestCandidate, DigestReport, ReportWindow
+from app.domain.models import AnalysisResult, ContentItem, DeduplicationResult, DigestCandidate, DigestReport, ReportWindow
 
 
 class SourceAdapter(Protocol):
@@ -17,6 +17,13 @@ class ContentEnricher(Protocol):
 
 class Analyzer(Protocol):
     def analyze(self, item: ContentItem) -> AnalysisResult: ...
+
+
+class DeduplicationJudge(Protocol):
+    model_name: str
+    prompt_version: str
+
+    def judge(self, item: ContentItem, result: AnalysisResult, candidate) -> DeduplicationResult: ...
 
 
 class DigestGenerator(Protocol):

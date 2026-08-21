@@ -39,6 +39,15 @@ class SQLiteStore:
                 raw_json TEXT NOT NULL, model_name TEXT NOT NULL DEFAULT 'unknown',
                 prompt_version TEXT NOT NULL DEFAULT 'unknown', created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS dedup_reviews (
+                item_id TEXT NOT NULL REFERENCES items(item_id),
+                candidate_item_id TEXT NOT NULL REFERENCES items(item_id),
+                relationship TEXT NOT NULL, confidence REAL NOT NULL,
+                reason TEXT NOT NULL, raw_json TEXT NOT NULL,
+                model_name TEXT NOT NULL DEFAULT 'unknown',
+                prompt_version TEXT NOT NULL DEFAULT 'unknown', created_at TEXT NOT NULL,
+                PRIMARY KEY (item_id, candidate_item_id)
+            );
             CREATE TABLE IF NOT EXISTS deliveries (
                 item_id TEXT PRIMARY KEY REFERENCES items(item_id), status TEXT NOT NULL DEFAULT 'pending',
                 attempts INTEGER NOT NULL DEFAULT 0, telegram_message_id TEXT, last_error TEXT,
@@ -364,6 +373,31 @@ class SQLiteStore:
         self.connection.execute("UPDATE items SET status=? WHERE item_id=?", (result.decision, item_id))
         self.connection.commit()
 
+    def save_dedup_review(
+        self,
+        item_id: str,
+        candidate_item_id: str,
+        relationship: str,
+        confidence: float,
+        reason: str,
+        raw: dict,
+        model_name: str = "unknown",
+        prompt_version: str = "unknown",
+    ) -> None:
+        self.connection.execute(
+            """INSERT INTO dedup_reviews
+            (item_id, candidate_item_id, relationship, confidence, reason, raw_json,
+             model_name, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(item_id, candidate_item_id) DO UPDATE SET
+              relationship=excluded.relationship, confidence=excluded.confidence,
+              reason=excluded.reason, raw_json=excluded.raw_json,
+              model_name=excluded.model_name, prompt_version=excluded.prompt_version,
+              created_at=excluded.created_at""",
+            (item_id, candidate_item_id, relationship, confidence, reason,
+             json.dumps(raw, ensure_ascii=False), model_name, prompt_version, utc_now()),
+        )
+        self.connection.commit()
+
     def queue_delivery(self, item_id: str) -> None:
         self.connection.execute(
             "INSERT OR IGNORE INTO deliveries (item_id, updated_at) VALUES (?, ?)", (item_id, utc_now())
@@ -377,8 +411,8 @@ class SQLiteStore:
         start = (occurred_at - timedelta(hours=lookback_hours)).isoformat()
         end = (occurred_at + timedelta(hours=lookback_hours)).isoformat()
         rows = self.connection.execute(
-            """SELECT i.item_id, i.source_name, i.title, i.summary,
-            a.display_title, a.summary AS analysis_summary
+            """SELECT i.item_id, i.source_name, i.title, i.summary, i.published_at,
+            a.display_title, a.summary AS analysis_summary, a.event_json
             FROM analyses a JOIN items i ON i.item_id=a.item_id
             WHERE a.decision=?
               AND julianday(COALESCE(i.published_at, i.discovered_at)) >= julianday(?)
@@ -482,6 +516,7 @@ class SQLiteStore:
             "analyses": count("analyses"),
             "analysis_decisions": {row["decision"]: row["count"] for row in decision_rows},
             "analysis_priorities": {row["priority"]: row["count"] for row in priority_rows},
+            "dedup_reviews": count("dedup_reviews"),
             "deliveries": {row["status"]: row["count"] for row in delivery_rows},
             "reports": {row["status"]: row["count"] for row in report_rows},
             "latest_report": dict(latest_report) if latest_report else None,

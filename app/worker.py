@@ -9,8 +9,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.adapters.langfuse.prompts import build_digest_prompt_provider, build_prompt_provider
-from app.adapters.llm.deepseek import RuleBasedAnalyzer, build_analyzer, build_digest_generator
+from app.adapters.langfuse.prompts import build_dedup_prompt_provider, build_digest_prompt_provider, build_prompt_provider
+from app.adapters.llm.deepseek import (
+    RuleBasedAnalyzer, RuleBasedDeduplicationJudge, build_analyzer,
+    build_deduplication_judge, build_digest_generator,
+)
 from app.adapters.sources.registry import build_source_adapter
 from app.adapters.telegram.bot import build_notifier
 from app.application.pipeline import process_item, render_digest, render_message, send_pending
@@ -57,6 +60,7 @@ def run_once(
     notifier=None,
     baseline=False,
     notification_policy: NotificationPolicy | None = None,
+    dedup_judge=None,
 ) -> dict[str, int]:
     job_id = store.begin_job()
     discovered = analyzed = sent = errors = 0
@@ -90,7 +94,7 @@ def run_once(
                         item = adapter.enrich(item, source)
                     outcome = process_item(
                         store, item, analyzer, notifier, notification_policy,
-                        template_provider=store,
+                        template_provider=store, dedup_judge=dedup_judge,
                     )
                     discovered += int(outcome.created)
                     analyzed += int(outcome.analyzed)
@@ -122,6 +126,7 @@ def daemon(
     notification_policy: NotificationPolicy,
     report_config: dict,
     digest_generator,
+    dedup_judge=None,
 ) -> None:
     interval = int(os.environ.get("WORKER_TICK_SECONDS", "15"))
     while not STOP:
@@ -130,7 +135,7 @@ def daemon(
         )
         if any(report_result.values()):
             print(f"[INFO] reports={report_result}")
-        result = run_daemon_tick(store, sources, analyzer, notifier, notification_policy)
+        result = run_daemon_tick(store, sources, analyzer, notifier, notification_policy, dedup_judge)
         if result is not None:
             print(f"[INFO] run={result}")
         for _ in range(interval):
@@ -145,10 +150,14 @@ def run_daemon_tick(
     analyzer,
     notifier,
     notification_policy: NotificationPolicy | None = None,
+    dedup_judge=None,
 ) -> dict[str, int] | None:
     due_sources = [source for source in sources if store.source_is_due(source["id"])]
     if due_sources:
-        return run_once(store, due_sources, analyzer, notifier, notification_policy=notification_policy)
+        return run_once(
+            store, due_sources, analyzer, notifier,
+            notification_policy=notification_policy, dedup_judge=dedup_judge,
+        )
 
     sent = send_pending(store, notifier, template_provider=store)
     if sent:
@@ -195,11 +204,14 @@ def main() -> int:
     if args.prompt_status:
         _, filter_version = build_prompt_provider().get_prompt()
         _, digest_version = build_digest_prompt_provider().get_prompt()
+        _, dedup_version = build_dedup_prompt_provider().get_prompt()
         print(json.dumps({
             "filter_prompt_version": filter_version,
             "filter_remote": filter_version.startswith("langfuse:"),
             "digest_prompt_version": digest_version,
             "digest_remote": digest_version.startswith("langfuse:"),
+            "dedup_prompt_version": dedup_version,
+            "dedup_remote": dedup_version.startswith("langfuse:"),
         }, ensure_ascii=False, indent=2))
         store.close()
         return 0
@@ -240,6 +252,7 @@ def main() -> int:
         store.close()
         return 0
     analyzer = RuleBasedAnalyzer() if args.bootstrap else build_analyzer()
+    dedup_judge = RuleBasedDeduplicationJudge() if args.bootstrap else build_deduplication_judge()
     notifier = None if args.bootstrap or args.dry_run else build_notifier()
 
     def stop_handler(signum, frame):
@@ -251,11 +264,11 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop_handler)
     try:
         if args.bootstrap:
-            print(f"[INFO] bootstrap={run_once(store, sources, analyzer, baseline=True)}")
+            print(f"[INFO] bootstrap={run_once(store, sources, analyzer, baseline=True, dedup_judge=dedup_judge)}")
         elif args.daemon:
             if store.item_count() == 0:
                 print("[INFO] empty database; establishing baseline without sending")
-                print(f"[INFO] bootstrap={run_once(store, sources, analyzer, baseline=True)}")
+                print(f"[INFO] bootstrap={run_once(store, sources, analyzer, baseline=True, dedup_judge=dedup_judge)}")
             daemon(
                 store,
                 sources,
@@ -264,13 +277,14 @@ def main() -> int:
                 notification_policy,
                 report_config,
                 build_digest_generator(),
+                dedup_judge,
             )
         else:
             if store.item_count() == 0:
                 print("[INFO] empty database; establishing baseline without sending")
-                print(f"[INFO] bootstrap={run_once(store, sources, analyzer, baseline=True)}")
+                print(f"[INFO] bootstrap={run_once(store, sources, analyzer, baseline=True, dedup_judge=dedup_judge)}")
             else:
-                print(f"[INFO] run={run_once(store, sources, analyzer, notifier, notification_policy=notification_policy)}")
+                print(f"[INFO] run={run_once(store, sources, analyzer, notifier, notification_policy=notification_policy, dedup_judge=dedup_judge)}")
     finally:
         store.close()
     return 0

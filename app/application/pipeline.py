@@ -174,6 +174,7 @@ def process_item(
     notifier=None,
     notification_policy: NotificationPolicy | None = None,
     template_provider: TemplateProvider | None = None,
+    dedup_judge=None,
 ) -> ProcessOutcome:
     created = store.save_item(item)
     if not created and store.item_status(item.item_id) == "baselined":
@@ -192,6 +193,66 @@ def process_item(
         return ProcessOutcome(created=created, analyzed=True)
     duplicate = store.find_recent_notification_duplicate(item)
     if duplicate is not None:
+        if dedup_judge is None:
+            dedup = None
+            suppress = True
+        else:
+            try:
+                dedup = dedup_judge.judge(item, result, duplicate)
+            except Exception as exc:
+                dedup = None
+                suppress = False
+                dedup_error = type(exc).__name__
+            else:
+                dedup_error = None
+                try:
+                    threshold = float(os.environ.get("DEDUP_MIN_CONFIDENCE", "0.80"))
+                except ValueError:
+                    threshold = 0.80
+                threshold = max(0.0, min(1.0, threshold))
+                suppress = dedup.relationship == "duplicate" and dedup.confidence >= threshold
+
+            if dedup is None:
+                relationship = "independent"
+                confidence = 0.0
+                reason = "去重审查不可用，按独立事件处理。"
+                raw_review = {"error_type": dedup_error or "unknown"}
+            else:
+                relationship = dedup.relationship
+                confidence = dedup.confidence
+                reason = dedup.reason
+                raw_review = dedup.raw
+            store.save_dedup_review(
+                item.item_id,
+                str(duplicate["item_id"]),
+                relationship,
+                confidence,
+                reason,
+                raw_review,
+                model_name=getattr(dedup_judge, "model_name", "unknown"),
+                prompt_version=getattr(dedup_judge, "prompt_version", "unknown"),
+            )
+            raw = dict(result.raw)
+            raw["_deduplication"] = {
+                "relationship": relationship,
+                "confidence": confidence,
+                "reason": reason,
+                "candidate_item_id": duplicate["item_id"],
+                "candidate_source": duplicate["source_name"],
+            }
+            result = replace(result, raw=raw)
+            if suppress:
+                result = replace(result, decision="ignore")
+            store.save_analysis(
+                item.item_id,
+                result,
+                model_name=getattr(analyzer, "model_name", "unknown"),
+                prompt_version=getattr(analyzer, "prompt_version", "unknown"),
+            )
+            if suppress:
+                return ProcessOutcome(created=created, analyzed=True)
+            return _deliver_or_queue(store, item, result, notifier, template_provider, created)
+
         raw = dict(result.raw)
         raw["_deduplication"] = {
             "reason": "semantic_duplicate",
@@ -206,6 +267,17 @@ def process_item(
             prompt_version=getattr(analyzer, "prompt_version", "unknown"),
         )
         return ProcessOutcome(created=created, analyzed=True)
+    return _deliver_or_queue(store, item, result, notifier, template_provider, created)
+
+
+def _deliver_or_queue(
+    store: NotificationRepository,
+    item: ContentItem,
+    result: AnalysisResult,
+    notifier,
+    template_provider: TemplateProvider | None,
+    created: bool,
+) -> ProcessOutcome:
     store.queue_delivery(item.item_id)
     if notifier is None:
         return ProcessOutcome(created=created, analyzed=True)

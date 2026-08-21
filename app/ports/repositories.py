@@ -25,6 +25,11 @@ class IntelligenceRepository(Protocol):
     def find_recent_notification_duplicate(
         self, item: ContentItem, lookback_hours: int = 72,
     ) -> Mapping[str, Any] | None: ...
+    def save_dedup_review(
+        self, item_id: str, candidate_item_id: str, relationship: str,
+        confidence: float, reason: str, raw: dict,
+        model_name: str = "unknown", prompt_version: str = "unknown",
+    ) -> None: ...
 
 
 class DeliveryRepository(Protocol):

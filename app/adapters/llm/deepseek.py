@@ -4,14 +4,20 @@ import json
 import os
 import re
 import urllib.request
+from collections.abc import Mapping
 from typing import Any
 
 from app.adapters.langfuse.prompts import (
     PromptProvider,
+    build_dedup_prompt_provider,
     build_digest_prompt_provider,
     build_prompt_provider,
 )
-from app.domain.models import AnalysisResult, ContentItem, DigestCandidate, DigestReport, EventFeatures, ReportWindow
+from app.domain.deduplication import are_semantic_duplicates
+from app.domain.models import (
+    AnalysisResult, ContentItem, DeduplicationResult, DigestCandidate, DigestReport,
+    EventFeatures, ReportWindow,
+)
 
 
 def _clean_text(value: Any, fallback: str, limit: int) -> str:
@@ -82,6 +88,22 @@ def _result(data: dict[str, Any], item: ContentItem) -> AnalysisResult:
         raw=data,
         display_title=_clean_text(data.get("display_title", data.get("title")), item.title, 180),
         event=_event_features(data, summary),
+    )
+
+
+def _dedup_result(data: dict[str, Any]) -> DeduplicationResult:
+    relationship = str(data.get("relationship", "independent")).strip().lower()
+    if relationship not in {"duplicate", "update", "independent"}:
+        relationship = "independent"
+    try:
+        confidence = max(0.0, min(1.0, float(data.get("confidence", 0.0))))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return DeduplicationResult(
+        relationship=relationship,
+        confidence=confidence,
+        reason=_clean_text(data.get("reason"), "证据不足，按独立事件处理。", 160),
+        raw=data,
     )
 
 
@@ -176,6 +198,66 @@ class DeepSeekAnalyzer:
         return _result(_chat_json(self.api_key, self.model, self.base_url, self.timeout, messages), item)
 
 
+class DeepSeekDeduplicationJudge:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str,
+        timeout: float = 45.0,
+        prompt_provider: PromptProvider | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.model_name = model
+        self.prompt_version = os.environ.get("DEDUP_PROMPT_VERSION", "local-v1")
+        self.prompt_provider = prompt_provider or build_dedup_prompt_provider()
+
+    def judge(
+        self,
+        item: ContentItem,
+        result: AnalysisResult,
+        candidate: Mapping[str, Any],
+    ) -> DeduplicationResult:
+        prompt_messages, self.prompt_version = self.prompt_provider.get_prompt()
+        try:
+            candidate_event = json.loads(str(candidate.get("event_json") or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            candidate_event = {}
+        if not isinstance(candidate_event, dict):
+            candidate_event = {}
+        content_json = json.dumps({
+            "new_item": {
+                "source": item.source_name,
+                "published_at": item.published_at.isoformat() if item.published_at else None,
+                "title": item.title,
+                "summary": item.summary[:1200],
+                "event": {
+                    "event_type": result.event.event_type,
+                    "organization": result.event.organization,
+                    "product": result.event.product,
+                    "version": result.event.version,
+                    "core_claim": result.event.core_claim,
+                    "event_time": result.event.event_time,
+                },
+            },
+            "historical_item": {
+                "source": str(candidate.get("source_name") or ""),
+                "published_at": str(candidate.get("published_at") or ""),
+                "title": str(candidate.get("display_title") or candidate.get("title") or ""),
+                "summary": str(candidate.get("analysis_summary") or candidate.get("summary") or "")[:1200],
+                "event": candidate_event,
+            },
+        }, ensure_ascii=False)
+        messages = [
+            {"role": message["role"], "content": message["content"].replace("{{content_json}}", content_json)}
+            for message in prompt_messages
+        ]
+        return _dedup_result(_chat_json(self.api_key, self.model, self.base_url, self.timeout, messages))
+
+
 class DeepSeekDigestGenerator:
     def __init__(
         self,
@@ -248,6 +330,22 @@ class RuleBasedAnalyzer:
         )
 
 
+class RuleBasedDeduplicationJudge:
+    model_name = "rules"
+    prompt_version = "dedup-rules-v1"
+
+    def judge(self, item: ContentItem, result: AnalysisResult, candidate: Mapping[str, Any]) -> DeduplicationResult:
+        candidate_title = str(candidate.get("display_title") or candidate.get("title") or "")
+        candidate_summary = str(candidate.get("analysis_summary") or candidate.get("summary") or "")
+        duplicate = are_semantic_duplicates(item.title, item.summary, candidate_title, candidate_summary)
+        return DeduplicationResult(
+            relationship="duplicate" if duplicate else "independent",
+            confidence=0.9 if duplicate else 0.55,
+            reason="本地规则判断核心标题和摘要高度重合。" if duplicate else "本地规则未确认两条内容是同一事件。",
+            raw={"mode": "rules", "heuristic_duplicate": duplicate},
+        )
+
+
 class RuleBasedDigestGenerator:
     prompt_version = "digest-rules-v1"
 
@@ -286,6 +384,22 @@ def build_analyzer():
             base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         )
     raise RuntimeError("无法创建 DeepSeek 分析器")
+
+
+def build_deduplication_judge():
+    mode = os.environ.get("AI_MODE", "deepseek").strip().lower()
+    if mode == "rules":
+        return RuleBasedDeduplicationJudge()
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if mode != "deepseek":
+        raise RuntimeError(f"不支持的 AI_MODE: {mode}")
+    if not api_key:
+        raise RuntimeError("AI_MODE=deepseek 时必须配置 DEEPSEEK_API_KEY；本地测试请明确设置 AI_MODE=rules")
+    return DeepSeekDeduplicationJudge(
+        api_key=api_key,
+        model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    )
 
 
 def build_digest_generator():

@@ -153,7 +153,15 @@ AI 先输出结构化 JSON，程序再使用固定模板渲染 Telegram 消息�
   "category": "AI 前沿信息",
   "priority": "S",
   "action": "值得测试",
-  "confidence": 0.92
+  "confidence": 0.92,
+  "event": {
+    "event_type": "model_release",
+    "organization": "DeepSeek",
+    "product": "V4",
+    "version": "V4",
+    "core_claim": "发布新模型并更新 API",
+    "event_time": "2026-08-21"
+  }
 }
 ```
 
@@ -185,6 +193,8 @@ AI 先输出结构化 JSON，程序再使用固定模板渲染 Telegram 消息�
 报告摘要使用独立 Prompt。仓库 fallback 位于 `config/prompts/digest_summary.md` 和 `config/prompts/digest_summary_user.md`；Langfuse Prompt 名默认为 `ai-intelligence-digest`，可通过 `LANGFUSE_DIGEST_PROMPT_NAME` 与 `LANGFUSE_DIGEST_PROMPT_LABEL` 修改。Langfuse 中尚未创建该 Prompt 或暂时不可用时，系统继续使用本地 fallback。
 
 Telegram 发布门槛位于 `config/publishing.json`。DeepSeek 先给出结构化判断，程序再执行确定性门槛；当前仅允许置信度不低于 `0.75` 的 S、A级 `notify` 结果进入发送队列。未通过门槛的结果会降为 `review`，并在分析原始数据中记录原因，不会直接推送。
+
+跨来源去重采用两阶段流程：第一轮筛选同时抽取 `event` 特征；本地标题和摘要规则只负责寻找 72 小时内的疑似候选，不直接认定重复。命中候选后，第二个去重 Prompt 才会调用 DeepSeek，输出 `duplicate`、`update` 或 `independent`。只有 `duplicate` 且置信度达到 `DEDUP_MIN_CONFIDENCE`（默认 `0.80`）才会抑制推送；`update`、`independent`、低置信度或调用失败均会放行。每次审查写入 SQLite 的 `dedup_reviews`，便于追踪模型、Prompt 版本和判断理由。
 
 ```json
 {
@@ -304,7 +314,7 @@ app/
 4. 实现前端情报流、知识库、搜索和来源管理，并扩展现有模板管理能力。
 5. 扩充并评估第三方 X RSS，完善 Email，接入 Langfuse Prompt 管理和评测。
 
-Langfuse 已支持远程 Chat Prompt：在 Langfuse 创建名称为 `ai-intelligence-filter` 的 Chat Prompt，System 消息保存筛选规则，User 消息使用 `{{content_json}}` 接收程序序列化的候选消息，并发布 `production` label；将 `.env` 中 `LANGFUSE_ENABLED=true`、公钥和密钥配置好，Worker 会每 60 秒刷新一次，网络失败自动回退到本地 Prompt。不要把 Langfuse 密钥提交到仓库。
+Langfuse 已支持远程 Chat Prompt：筛选 Prompt 名称默认为 `ai-intelligence-filter`，去重 Prompt 名称默认为 `ai-intelligence-dedup`，两者的 User 消息都使用 `{{content_json}}` 接收程序序列化的数据，并发布 `production` label。去重 Prompt 的本地 fallback 位于 `config/prompts/intelligence_dedup.md` 和 `config/prompts/intelligence_dedup_user.md`。将 `.env` 中 `LANGFUSE_ENABLED=true`、公钥和密钥配置好，Worker 会按 `LANGFUSE_CACHE_SECONDS` 刷新，网络失败自动回退到本地 Prompt。`python -m app.worker --prompt-status` 会同时显示筛选、日报/周报和去重 Prompt 的版本及远程状态。不要把 Langfuse 密钥提交到仓库。
 
 Email 和 X 适配器已经加入。Email 使用 IMAP 只读模式，需要设置 `AI_EMAIL_USERNAME`、`AI_EMAIL_PASSWORD`；每个 Newsletter 还应配置 `from_address`，共用发件地址时再配置 `from_name`，避免采集同一邮箱内的无关邮件。TLDR AI 已按这套规则启用。官方 X API v2 Recent Search 仍默认关闭；当前 X 账号通过 `xgo.ing` 提供的第三方 RSS 接入，并在来源配置中标记 `provider: xgo.ing`、`origin: third_party`。该服务可能存在延迟、漏消息或中断，不能视为官方 API。
 

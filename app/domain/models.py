@@ -44,6 +44,14 @@ class AnalysisResult:
 
 
 @dataclass(frozen=True)
+class DeduplicationResult:
+    relationship: str = "independent"
+    confidence: float = 0.0
+    reason: str = ""
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class DigestReport:
     report_title: str
     period_label: str
