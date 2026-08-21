@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import os
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -187,6 +188,22 @@ def process_item(
         prompt_version=getattr(analyzer, "prompt_version", "unknown"),
     )
     if result.decision != "notify":
+        return ProcessOutcome(created=created, analyzed=True)
+    duplicate = store.find_recent_notification_duplicate(item)
+    if duplicate is not None:
+        raw = dict(result.raw)
+        raw["_deduplication"] = {
+            "reason": "semantic_duplicate",
+            "duplicate_of_item_id": duplicate["item_id"],
+            "duplicate_source": duplicate["source_name"],
+        }
+        result = replace(result, decision="ignore", raw=raw)
+        store.save_analysis(
+            item.item_id,
+            result,
+            model_name=getattr(analyzer, "model_name", "unknown"),
+            prompt_version=getattr(analyzer, "prompt_version", "unknown"),
+        )
         return ProcessOutcome(created=created, analyzed=True)
     store.queue_delivery(item.item_id)
     if notifier is None:

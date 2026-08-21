@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.domain.models import AnalysisResult, ContentItem
+from app.domain.deduplication import are_semantic_duplicates
 
 
 def utc_now() -> str:
@@ -352,6 +353,33 @@ class SQLiteStore:
             "INSERT OR IGNORE INTO deliveries (item_id, updated_at) VALUES (?, ?)", (item_id, utc_now())
         )
         self.connection.commit()
+
+    def find_recent_notification_duplicate(
+        self, item: ContentItem, lookback_hours: int = 72
+    ) -> sqlite3.Row | None:
+        occurred_at = item.published_at or item.discovered_at
+        start = (occurred_at - timedelta(hours=lookback_hours)).isoformat()
+        end = (occurred_at + timedelta(hours=lookback_hours)).isoformat()
+        rows = self.connection.execute(
+            """SELECT i.item_id, i.source_name, i.title, i.summary,
+            a.display_title, a.summary AS analysis_summary
+            FROM analyses a JOIN items i ON i.item_id=a.item_id
+            WHERE a.decision='notify'
+              AND julianday(COALESCE(i.published_at, i.discovered_at)) >= julianday(?)
+              AND julianday(COALESCE(i.published_at, i.discovered_at)) <= julianday(?)
+              AND i.item_id != ?
+            ORDER BY COALESCE(i.published_at, i.discovered_at) ASC""",
+            (start, end, item.item_id),
+        ).fetchall()
+        for row in rows:
+            if are_semantic_duplicates(
+                item.title,
+                item.summary,
+                row["display_title"] or row["title"],
+                row["analysis_summary"] or row["summary"],
+            ):
+                return row
+        return None
 
     def pending_deliveries(self) -> list[sqlite3.Row]:
         return list(self.connection.execute(
