@@ -126,7 +126,14 @@ def _report_from_payload(value: str) -> DigestReport:
     return DigestReport(**{field: str(data.get(field, "")) for field in DigestReport.__dataclass_fields__})
 
 
-def run_reports_tick(store, config: dict[str, Any], generator, notifier, now: datetime | None = None) -> dict[str, int]:
+def run_reports_tick(
+    store,
+    config: dict[str, Any],
+    generator,
+    notifier,
+    now: datetime | None = None,
+    template_provider=None,
+) -> dict[str, int]:
     enabled_types = {
         report_type for report_type in ("daily", "weekly")
         if bool(config.get(report_type, {}).get("enabled", False))
@@ -176,7 +183,7 @@ def run_reports_tick(store, config: dict[str, Any], generator, notifier, now: da
                 )
                 store.save_report_payload(report_id, _payload(report), generator.prompt_version)
                 result["generated"] += 1
-            message_id = notifier.send(render_digest(report))
+            message_id = notifier.send(render_digest(report, template_provider=template_provider))
             store.mark_report_sent(report_id, message_id)
             result["sent"] += 1
         except Exception as exc:

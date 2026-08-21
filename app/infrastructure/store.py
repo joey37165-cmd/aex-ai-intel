@@ -57,6 +57,18 @@ class SQLiteStore:
                 telegram_message_id TEXT, last_error TEXT, next_attempt_at TEXT,
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS message_templates (
+                template_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
+                draft_content TEXT NOT NULL, draft_revision INTEGER NOT NULL DEFAULT 1,
+                published_version INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS message_template_versions (
+                template_id TEXT NOT NULL REFERENCES message_templates(template_id),
+                version INTEGER NOT NULL, content TEXT NOT NULL,
+                published_at TEXT NOT NULL, created_by TEXT NOT NULL,
+                PRIMARY KEY (template_id, version)
+            );
             """
         )
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(analyses)")}
@@ -68,6 +80,125 @@ class SQLiteStore:
         if "image_url" not in item_columns:
             self.connection.execute("ALTER TABLE items ADD COLUMN image_url TEXT")
         self.connection.commit()
+
+    def initialize_template(self, template_id: str, name: str, description: str, content: str) -> None:
+        now = utc_now()
+        self.connection.execute(
+            """INSERT OR IGNORE INTO message_templates
+            (template_id, name, description, draft_content, draft_revision,
+             published_version, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, 1, ?, ?)""",
+            (template_id, name, description, content, now, now),
+        )
+        self.connection.execute(
+            """INSERT OR IGNORE INTO message_template_versions
+            (template_id, version, content, published_at, created_by)
+            VALUES (?, 1, ?, ?, 'system')""",
+            (template_id, content, now),
+        )
+        self.connection.commit()
+
+    def template_summaries(self) -> list[sqlite3.Row]:
+        return list(self.connection.execute(
+            """SELECT template_id, name, description, draft_revision,
+            published_version, updated_at,
+            CASE WHEN draft_content = (
+                SELECT content FROM message_template_versions v
+                WHERE v.template_id=message_templates.template_id
+                  AND v.version=message_templates.published_version
+            ) THEN 'published' ELSE 'draft' END AS status
+            FROM message_templates ORDER BY template_id DESC"""
+        ))
+
+    def template_detail(self, template_id: str) -> dict | None:
+        row = self.connection.execute(
+            """SELECT template_id, name, description, draft_content, draft_revision,
+            published_version, updated_at,
+            CASE WHEN draft_content = (
+                SELECT content FROM message_template_versions v
+                WHERE v.template_id=message_templates.template_id
+                  AND v.version=message_templates.published_version
+            ) THEN 'published' ELSE 'draft' END AS status
+            FROM message_templates WHERE template_id=?""",
+            (template_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        versions = self.connection.execute(
+            """SELECT version, content, published_at, created_by
+            FROM message_template_versions WHERE template_id=? ORDER BY version DESC""",
+            (template_id,),
+        ).fetchall()
+        result = dict(row)
+        result["versions"] = [dict(version) for version in versions]
+        return result
+
+    def save_template_draft(self, template_id: str, content: str, expected_revision: int) -> dict | None:
+        cursor = self.connection.execute(
+            """UPDATE message_templates SET draft_content=?, draft_revision=draft_revision+1,
+            updated_at=? WHERE template_id=? AND draft_revision=?""",
+            (content, utc_now(), template_id, expected_revision),
+        )
+        self.connection.commit()
+        return self.template_detail(template_id) if cursor.rowcount == 1 else None
+
+    def publish_template(self, template_id: str, expected_revision: int, created_by: str) -> dict | None:
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            row = self.connection.execute(
+                """SELECT t.draft_content, t.draft_revision, t.published_version,
+                v.content AS published_content
+                FROM message_templates t
+                JOIN message_template_versions v
+                  ON v.template_id=t.template_id AND v.version=t.published_version
+                WHERE t.template_id=?""",
+                (template_id,),
+            ).fetchone()
+            if (
+                row is None
+                or int(row["draft_revision"]) != expected_revision
+                or row["draft_content"] == row["published_content"]
+            ):
+                self.connection.rollback()
+                return None
+            next_version = int(row["published_version"]) + 1
+            now = utc_now()
+            self.connection.execute(
+                """INSERT INTO message_template_versions
+                (template_id, version, content, published_at, created_by)
+                VALUES (?, ?, ?, ?, ?)""",
+                (template_id, next_version, row["draft_content"], now, created_by[:100]),
+            )
+            self.connection.execute(
+                """UPDATE message_templates SET published_version=?, updated_at=?
+                WHERE template_id=?""",
+                (next_version, now, template_id),
+            )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return self.template_detail(template_id)
+
+    def restore_template_version(self, template_id: str, version: int, expected_revision: int) -> dict | None:
+        row = self.connection.execute(
+            """SELECT content FROM message_template_versions
+            WHERE template_id=? AND version=?""",
+            (template_id, version),
+        ).fetchone()
+        if row is None:
+            return None
+        return self.save_template_draft(template_id, str(row["content"]), expected_revision)
+
+    def get_published_template(self, template_id: str) -> str | None:
+        row = self.connection.execute(
+            """SELECT v.content FROM message_templates t
+            JOIN message_template_versions v
+              ON v.template_id=t.template_id AND v.version=t.published_version
+            WHERE t.template_id=?""",
+            (template_id,),
+        ).fetchone()
+        return str(row["content"]) if row else None
 
     def close(self) -> None:
         self.connection.close()

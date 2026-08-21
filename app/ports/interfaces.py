@@ -27,3 +27,7 @@ class DigestGenerator(Protocol):
 
 class Notifier(Protocol):
     def send(self, text: str) -> str: ...
+
+
+class TemplateProvider(Protocol):
+    def get_published_template(self, template_id: str) -> str | None: ...
