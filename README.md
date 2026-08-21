@@ -312,6 +312,7 @@ Email 和 X 适配器已经加入。Email 使用 IMAP 只读模式，需要设�
 
 ## 相关文档
 
+- [系统架构](ARCHITECTURE.md)
 - [AI 信息源清单](AI%20信息源清单.md)
 - [Telegram 链路验证](Telegram%20链路验证.md)
 - [Agent 开发约束](AGENTS.md)

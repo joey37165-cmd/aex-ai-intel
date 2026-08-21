@@ -11,13 +11,7 @@ from pathlib import Path
 
 from app.adapters.langfuse.prompts import build_digest_prompt_provider, build_prompt_provider
 from app.adapters.llm.deepseek import RuleBasedAnalyzer, build_analyzer, build_digest_generator
-from app.adapters.sources.rss import RSSSourceAdapter
-from app.adapters.sources.changelog import DocusaurusChangelogSourceAdapter
-from app.adapters.sources.email import EmailSourceAdapter
-from app.adapters.sources.sitemap import SitemapSourceAdapter
-from app.adapters.sources.openai_changelog import OpenAIChangelogSourceAdapter
-from app.adapters.sources.gemini_changelog import GeminiChangelogSourceAdapter
-from app.adapters.sources.x import XSourceAdapter
+from app.adapters.sources.registry import build_source_adapter
 from app.adapters.telegram.bot import build_notifier
 from app.application.pipeline import process_item, render_digest, render_message, send_pending
 from app.application.reports import run_reports_tick
@@ -52,25 +46,6 @@ def load_notification_policy(path: Path) -> NotificationPolicy:
     if not 0 <= confidence <= 1:
         raise ValueError("publishing.json 中 min_confidence 必须在 0 到 1 之间")
     return NotificationPolicy(priorities, confidence)
-
-
-def build_source_adapter(source: dict):
-    source_type = str(source.get("source_type", "rss")).lower()
-    if source_type == "rss":
-        return RSSSourceAdapter()
-    if source_type == "docusaurus_changelog":
-        return DocusaurusChangelogSourceAdapter()
-    if source_type == "openai_changelog":
-        return OpenAIChangelogSourceAdapter()
-    if source_type == "gemini_changelog":
-        return GeminiChangelogSourceAdapter()
-    if source_type == "email":
-        return EmailSourceAdapter()
-    if source_type == "sitemap":
-        return SitemapSourceAdapter()
-    if source_type == "x":
-        return XSourceAdapter()
-    raise ValueError(f"不支持的 source_type: {source_type}")
 
 
 def run_once(
