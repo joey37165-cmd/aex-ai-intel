@@ -107,6 +107,13 @@ def _dedup_result(data: dict[str, Any]) -> DeduplicationResult:
     )
 
 
+def _candidate_value(candidate: Mapping[str, Any], key: str, default: Any = None) -> Any:
+    try:
+        return candidate[key]
+    except (KeyError, IndexError):
+        return default
+
+
 def _chat_json(api_key: str, model: str, base_url: str, timeout: float, messages: list[dict[str, str]]) -> dict:
     payload = {
         "model": model,
@@ -223,7 +230,7 @@ class DeepSeekDeduplicationJudge:
     ) -> DeduplicationResult:
         prompt_messages, self.prompt_version = self.prompt_provider.get_prompt()
         try:
-            candidate_event = json.loads(str(candidate.get("event_json") or "{}"))
+            candidate_event = json.loads(str(_candidate_value(candidate, "event_json") or "{}"))
         except (TypeError, ValueError, json.JSONDecodeError):
             candidate_event = {}
         if not isinstance(candidate_event, dict):
@@ -244,10 +251,10 @@ class DeepSeekDeduplicationJudge:
                 },
             },
             "historical_item": {
-                "source": str(candidate.get("source_name") or ""),
-                "published_at": str(candidate.get("published_at") or ""),
-                "title": str(candidate.get("display_title") or candidate.get("title") or ""),
-                "summary": str(candidate.get("analysis_summary") or candidate.get("summary") or "")[:1200],
+                "source": str(_candidate_value(candidate, "source_name") or ""),
+                "published_at": str(_candidate_value(candidate, "published_at") or ""),
+                "title": str(_candidate_value(candidate, "display_title") or _candidate_value(candidate, "title") or ""),
+                "summary": str(_candidate_value(candidate, "analysis_summary") or _candidate_value(candidate, "summary") or "")[:1200],
                 "event": candidate_event,
             },
         }, ensure_ascii=False)
@@ -335,8 +342,8 @@ class RuleBasedDeduplicationJudge:
     prompt_version = "dedup-rules-v1"
 
     def judge(self, item: ContentItem, result: AnalysisResult, candidate: Mapping[str, Any]) -> DeduplicationResult:
-        candidate_title = str(candidate.get("display_title") or candidate.get("title") or "")
-        candidate_summary = str(candidate.get("analysis_summary") or candidate.get("summary") or "")
+        candidate_title = str(_candidate_value(candidate, "display_title") or _candidate_value(candidate, "title") or "")
+        candidate_summary = str(_candidate_value(candidate, "analysis_summary") or _candidate_value(candidate, "summary") or "")
         duplicate = are_semantic_duplicates(item.title, item.summary, candidate_title, candidate_summary)
         return DeduplicationResult(
             relationship="duplicate" if duplicate else "independent",
