@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.request
 from collections.abc import Mapping
 from typing import Any
@@ -262,7 +263,13 @@ class DeepSeekDeduplicationJudge:
             {"role": message["role"], "content": message["content"].replace("{{content_json}}", content_json)}
             for message in prompt_messages
         ]
-        return _dedup_result(_chat_json(self.api_key, self.model, self.base_url, self.timeout, messages))
+        for attempt in range(3):
+            try:
+                return _dedup_result(_chat_json(self.api_key, self.model, self.base_url, self.timeout, messages))
+            except (OSError, ValueError, KeyError):
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
 
 
 class DeepSeekDigestGenerator:
