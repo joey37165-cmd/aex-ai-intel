@@ -11,7 +11,7 @@ from app.adapters.langfuse.prompts import (
     build_digest_prompt_provider,
     build_prompt_provider,
 )
-from app.domain.models import AnalysisResult, ContentItem, DigestCandidate, DigestReport, ReportWindow
+from app.domain.models import AnalysisResult, ContentItem, DigestCandidate, DigestReport, EventFeatures, ReportWindow
 
 
 def _clean_text(value: Any, fallback: str, limit: int) -> str:
@@ -19,6 +19,40 @@ def _clean_text(value: Any, fallback: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return f"{text[:limit - 1].rstrip()}…"
+
+
+_EVENT_TYPES = {
+    "model_release", "model_update", "api_update", "pricing_change", "tool_release",
+    "workflow_update", "research_result", "security_incident",
+    "policy_or_industry_change", "business_or_funding", "other",
+}
+_EVENT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _optional_text(value: Any, limit: int = 120) -> str | None:
+    if value is None:
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    return text[:limit].rstrip() or None
+
+
+def _event_features(data: dict[str, Any], summary: str) -> EventFeatures:
+    value = data.get("event")
+    event = value if isinstance(value, dict) else {}
+    event_type = str(event.get("event_type", "other")).strip().lower()
+    if event_type not in _EVENT_TYPES:
+        event_type = "other"
+    event_time = _optional_text(event.get("event_time"), 10)
+    if event_time and not _EVENT_DATE_RE.fullmatch(event_time):
+        event_time = None
+    return EventFeatures(
+        event_type=event_type,
+        organization=_optional_text(event.get("organization")),
+        product=_optional_text(event.get("product")),
+        version=_optional_text(event.get("version"), 60),
+        core_claim=_clean_text(event.get("core_claim"), summary, 160),
+        event_time=event_time,
+    )
 
 
 def _result(data: dict[str, Any], item: ContentItem) -> AnalysisResult:
@@ -36,16 +70,18 @@ def _result(data: dict[str, Any], item: ContentItem) -> AnalysisResult:
     if raw_category not in {"AI 前沿信息", "AI 应用"}:
         app_terms = ("工作流", "agent", "github", "工具", "应用", "变现", "workflow")
         raw_category = "AI 应用" if any(term in raw_category.lower() for term in app_terms) else "AI 前沿信息"
+    summary = _clean_text(data.get("summary"), item.summary or item.title, 240)
     return AnalysisResult(
         decision=decision,
         priority=priority,
         category=raw_category,
-        summary=_clean_text(data.get("summary"), item.summary or item.title, 240),
+        summary=summary,
         why_it_matters=_clean_text(data.get("why_it_matters"), "值得结合原文进一步判断。", 300),
         suggested_action=_clean_text(data.get("suggested_action"), "查看原文", 80),
         confidence=confidence,
         raw=data,
         display_title=_clean_text(data.get("display_title", data.get("title")), item.title, 180),
+        event=_event_features(data, summary),
     )
 
 
@@ -205,6 +241,10 @@ class RuleBasedAnalyzer:
             suggested_action="查看原文" if matches else "忽略", confidence=0.8,
             raw={"mode": "rules", "matches": matches},
             display_title=item.title,
+            event=EventFeatures(
+                core_claim=_clean_text(item.summary, item.title, 160),
+                event_time=item.published_at.date().isoformat() if item.published_at else None,
+            ),
         )
 
 

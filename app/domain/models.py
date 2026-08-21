@@ -20,6 +20,16 @@ class ContentItem:
 
 
 @dataclass(frozen=True)
+class EventFeatures:
+    event_type: str = "other"
+    organization: str | None = None
+    product: str | None = None
+    version: str | None = None
+    core_claim: str = ""
+    event_time: str | None = None
+
+
+@dataclass(frozen=True)
 class AnalysisResult:
     decision: str
     priority: str
@@ -30,6 +40,7 @@ class AnalysisResult:
     confidence: float
     raw: dict[str, Any] = field(default_factory=dict)
     display_title: str = ""
+    event: EventFeatures = field(default_factory=EventFeatures)
 
 
 @dataclass(frozen=True)

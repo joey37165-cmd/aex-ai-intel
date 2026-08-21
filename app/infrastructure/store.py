@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -34,6 +35,7 @@ class SQLiteStore:
                 priority TEXT NOT NULL, category TEXT NOT NULL, summary TEXT NOT NULL,
                 why_it_matters TEXT NOT NULL, suggested_action TEXT NOT NULL, confidence REAL NOT NULL,
                 display_title TEXT NOT NULL DEFAULT '',
+                event_json TEXT NOT NULL DEFAULT '{}',
                 raw_json TEXT NOT NULL, model_name TEXT NOT NULL DEFAULT 'unknown',
                 prompt_version TEXT NOT NULL DEFAULT 'unknown', created_at TEXT NOT NULL
             );
@@ -74,9 +76,14 @@ class SQLiteStore:
             """
         )
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(analyses)")}
-        for column in ("model_name", "prompt_version", "display_title"):
+        for column in ("model_name", "prompt_version", "display_title", "event_json"):
             if column not in columns:
-                default = "''" if column == "display_title" else "'unknown'"
+                if column == "display_title":
+                    default = "''"
+                elif column == "event_json":
+                    default = "'{}'"
+                else:
+                    default = "'unknown'"
                 self.connection.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT NOT NULL DEFAULT {default}")
         item_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(items)")}
         if "image_url" not in item_columns:
@@ -342,15 +349,16 @@ class SQLiteStore:
         self.connection.execute(
             """INSERT INTO analyses
             (item_id, decision, priority, category, summary, why_it_matters, suggested_action,
-             confidence, display_title, raw_json, model_name, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             confidence, display_title, event_json, raw_json, model_name, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(item_id) DO UPDATE SET decision=excluded.decision, priority=excluded.priority,
             category=excluded.category, summary=excluded.summary, why_it_matters=excluded.why_it_matters,
             suggested_action=excluded.suggested_action, confidence=excluded.confidence,
             display_title=excluded.display_title,
-            raw_json=excluded.raw_json, model_name=excluded.model_name,
+            event_json=excluded.event_json, raw_json=excluded.raw_json, model_name=excluded.model_name,
             prompt_version=excluded.prompt_version, created_at=excluded.created_at""",
             (item_id, result.decision, result.priority, result.category, result.summary,
              result.why_it_matters, result.suggested_action, result.confidence, result.display_title,
+             json.dumps(asdict(result.event), ensure_ascii=False),
              json.dumps(result.raw, ensure_ascii=False), model_name, prompt_version, utc_now()),
         )
         self.connection.execute("UPDATE items SET status=? WHERE item_id=?", (result.decision, item_id))
