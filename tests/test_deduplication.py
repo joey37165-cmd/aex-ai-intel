@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.application.pipeline import process_item
-from app.domain.deduplication import are_semantic_duplicates
-from app.domain.models import AnalysisResult, ContentItem, DeduplicationResult
+from app.domain.deduplication import are_event_candidates, are_semantic_duplicates
+from app.domain.models import AnalysisResult, ContentItem, DeduplicationResult, EventFeatures
 from app.infrastructure.store import SQLiteStore
 
 
@@ -67,6 +67,12 @@ class DeduplicationTests(unittest.TestCase):
         self.assertFalse(are_semantic_duplicates(
             "DeepSeek V4 Flash API 新增价格方案", "价格与计费更新",
             "DeepSeek V4 Flash Vision 多模态模型发布", "视觉模型能力更新",
+        ))
+
+    def test_structured_event_fields_open_candidate_gate_across_languages(self):
+        self.assertTrue(are_event_candidates(
+            EventFeatures("api_update", "DeepSeek", "V4 Flash Vision EXP", "EXP", "API update"),
+            EventFeatures("model_release", "DeepSeek", "DeepSeek-V4-Flash-Vision-Exp", "EXP", "model release"),
         ))
 
     def test_pipeline_suppresses_second_cross_source_notification(self):

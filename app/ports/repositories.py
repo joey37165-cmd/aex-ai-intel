@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any, Protocol
 
-from app.domain.models import AnalysisResult, ContentItem
+from app.domain.models import AnalysisResult, ContentItem, EventFeatures
 from app.ports.interfaces import TemplateProvider
 
 
@@ -23,7 +23,7 @@ class IntelligenceRepository(Protocol):
         model_name: str = "unknown", prompt_version: str = "unknown",
     ) -> None: ...
     def find_recent_notification_duplicate(
-        self, item: ContentItem, lookback_hours: int = 72,
+        self, item: ContentItem, event: EventFeatures | None = None, lookback_hours: int = 72,
     ) -> Mapping[str, Any] | None: ...
     def save_dedup_review(
         self, item_id: str, candidate_item_id: str, relationship: str,

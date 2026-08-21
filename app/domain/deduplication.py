@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from app.domain.models import EventFeatures
+
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]{2,}")
 _GENERIC_TERMS = {
@@ -10,6 +12,7 @@ _GENERIC_TERMS = {
     "人工智能", "ai", "new", "release", "update", "model", "api", "available",
 }
 _IDENTITY_TERMS = {"deepseek", "v4", "flash", "vision", "exp"}
+_GENERIC_IDENTITY = {"api", "model", "platform", "ai", "模型", "平台", "工具"}
 
 
 def _tokens(value: str) -> set[str]:
@@ -55,3 +58,21 @@ def are_semantic_duplicates(
     # A very close title match can still be the same event when the only
     # stable terms are a model or product identifier.
     return bool(meaningful_shared & _IDENTITY_TERMS) and title_score >= 0.65 and all_score >= 0.4
+
+
+def are_event_candidates(left: EventFeatures, right: EventFeatures) -> bool:
+    """Return whether structured events are close enough to warrant LLM review."""
+    def normalized(value: str | None) -> str:
+        return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", unicodedata.normalize("NFKC", value or "").casefold())
+
+    left_product = normalized(left.product)
+    right_product = normalized(right.product)
+    left_version = normalized(left.version)
+    right_version = normalized(right.version)
+    left_organization = normalized(left.organization)
+    right_organization = normalized(right.organization)
+    shared_product = bool(left_product and left_product == right_product and left_product not in _GENERIC_IDENTITY)
+    shared_version = bool(left_version and left_version == right_version and len(left_version) >= 2)
+    same_organization = bool(left_organization and left_organization == right_organization)
+    same_event_type = left.event_type == right.event_type and left.event_type != "other"
+    return shared_product or shared_version or (same_organization and same_event_type)

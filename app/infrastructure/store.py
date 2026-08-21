@@ -6,8 +6,8 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app.domain.models import AnalysisResult, ContentItem
-from app.domain.deduplication import are_semantic_duplicates
+from app.domain.models import AnalysisResult, ContentItem, EventFeatures
+from app.domain.deduplication import are_event_candidates, are_semantic_duplicates
 from app.domain.status import DeliveryStatus, ItemStatus, ReportStatus
 
 
@@ -405,7 +405,7 @@ class SQLiteStore:
         self.connection.commit()
 
     def find_recent_notification_duplicate(
-        self, item: ContentItem, lookback_hours: int = 72
+        self, item: ContentItem, event: EventFeatures | None = None, lookback_hours: int = 72
     ) -> sqlite3.Row | None:
         occurred_at = item.published_at or item.discovered_at
         start = (occurred_at - timedelta(hours=lookback_hours)).isoformat()
@@ -422,12 +422,26 @@ class SQLiteStore:
             (ItemStatus.NOTIFY, start, end, item.item_id),
         ).fetchall()
         for row in rows:
+            candidate_event = None
+            try:
+                value = json.loads(row["event_json"] or "{}")
+                if isinstance(value, dict) and value:
+                    candidate_event = EventFeatures(
+                        event_type=str(value.get("event_type") or "other"),
+                        organization=value.get("organization"),
+                        product=value.get("product"),
+                        version=value.get("version"),
+                        core_claim=str(value.get("core_claim") or ""),
+                        event_time=value.get("event_time"),
+                    )
+            except (TypeError, ValueError, json.JSONDecodeError):
+                candidate_event = None
             if are_semantic_duplicates(
                 item.title,
                 item.summary,
                 row["display_title"] or row["title"],
                 row["analysis_summary"] or row["summary"],
-            ):
+            ) or (event is not None and candidate_event is not None and are_event_candidates(event, candidate_event)):
                 return row
         return None
 

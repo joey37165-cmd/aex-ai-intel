@@ -191,7 +191,7 @@ def process_item(
     )
     if result.decision != ItemStatus.NOTIFY:
         return ProcessOutcome(created=created, analyzed=True)
-    duplicate = store.find_recent_notification_duplicate(item)
+    duplicate = store.find_recent_notification_duplicate(item, result.event)
     if duplicate is not None:
         if dedup_judge is None:
             dedup = None
