@@ -13,11 +13,47 @@
 - RSS → 去重 → Telegram 频道的最小 MVP 已验证成功。
 - 首次基线已建立，不会重复推送历史消息。
 - Telegram 频道已接通，Worker 可通过 `python -m app.worker --daemon` 持续运行。
-- Newsletter 已接入 TLDR AI Email、The Rundown AI RSS、The Neuron Atom、The Batch Sitemap 和 Superhuman AI Sitemap；Product Hunt AI 产品 Feed、GitHub Release 来源和 Gemini API Changelog 也已接入。X 官方 API Adapter 仍默认关闭，当前使用 15 个 `xgo.ing` 第三方 RSS 账号源；知识库按钮、前端尚未实现。
+- Newsletter 已接入 TLDR AI Email、The Rundown AI RSS、The Neuron Atom、The Batch Sitemap 和 Superhuman AI Sitemap；Product Hunt AI 产品 Feed、GitHub Release 来源和 Gemini API Changelog 也已接入。X 官方 API Adapter 仍默认关闭，当前使用 15 个 `xgo.ing` 第三方 RSS 账号源；知识库按钮尚未实现，私有模板管理界面已接入管理 API。
 - 第一阶段 LLM 供应商已确定为 DeepSeek；具体模型通过配置选择，不写死在业务代码中。
 - 第一阶段正式 Worker 已建立：`python -m app.worker --daemon`，生产环境由 `systemd` 托管。
 - 日报和周报已接入同一个常驻 Worker：日报每天 09:00 汇总前一天 09:00 至当天 09:00，周报每周一 09:00 汇总上周一 09:00 至本周一 09:00，时区均为 `Asia/Shanghai`。
 - 未来前端采用公开只读页面与私有管理页面分离的模式。
+
+### 模板管理界面
+
+模板管理界面位于 `web/`，当前只管理两套 Telegram 模板：日常情报，以及日报/周报共用模板。页面通过带 Bearer Token 认证的 FastAPI 管理接口读写 SQLite 模板版本，不读取或保存 Telegram Bot Token、Chat ID、模型密钥等配置。
+
+模板状态分为草稿与已发布版本：保存草稿不会影响 Worker，点击发布后才会生成不可变的新版本。Worker 在每次渲染消息时读取当前发布版本；数据库模板不可用时自动回退到 `config/templates/` 中的仓库模板。
+
+启动界面：
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+另开一个终端启动管理 API：
+
+```powershell
+python -m uvicorn app.api:app --host 127.0.0.1 --port 8000
+```
+
+打开 `http://localhost:5173/` 并输入 `.env` 中的 `ADMIN_API_TOKEN`，可以切换模板、编辑 HTML、点击变量插入、预览 Telegram 效果、保存草稿、发布版本和恢复历史版本。
+
+生成管理 Token：
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+将结果只写入本地或服务器 `.env` 的 `ADMIN_API_TOKEN`，不要提交到 GitHub。管理 Token 只保存在当前浏览器的 `sessionStorage`，关闭标签后清除。
+
+也可以让程序直接生成并安全写入 `.env`，命令只显示 Token 指纹，不显示完整凭据：
+
+```powershell
+python -m app.admin_token --env .env
+```
 
 验证命令：
 
@@ -265,7 +301,7 @@ app/
 1. 完成来源注册、自动采集、去重、AI 结构化筛选、模板渲染、Telegram 自动推送、重试和运行监控。
 2. 加入 Telegram 决策按钮和 GitHub 知识库写入。
 3. 加入手动上传、过期治理和可重建搜索索引。
-4. 实现前端情报流、知识库、搜索、来源和模板管理。
+4. 实现前端情报流、知识库、搜索和来源管理，并扩展现有模板管理能力。
 5. 扩充并评估第三方 X RSS，完善 Email，接入 Langfuse Prompt 管理和评测。
 
 Langfuse 已支持远程 Chat Prompt：在 Langfuse 创建名称为 `ai-intelligence-filter` 的 Chat Prompt，System 消息保存筛选规则，User 消息使用 `{{content_json}}` 接收程序序列化的候选消息，并发布 `production` label；将 `.env` 中 `LANGFUSE_ENABLED=true`、公钥和密钥配置好，Worker 会每 60 秒刷新一次，网络失败自动回退到本地 Prompt。不要把 Langfuse 密钥提交到仓库。
@@ -280,3 +316,4 @@ Email 和 X 适配器已经加入。Email 使用 IMAP 只读模式，需要设�
 - [Telegram 链路验证](Telegram%20链路验证.md)
 - [Agent 开发约束](AGENTS.md)
 - [技术栈](TECH_STACK.md)
+- [服务器部署](deploy/README.md)

@@ -9,6 +9,7 @@ from pathlib import Path
 from app.domain.models import AnalysisResult, ContentItem, DigestReport, ProcessOutcome
 from app.domain.policies import NotificationPolicy
 from app.infrastructure.store import SQLiteStore
+from app.ports.interfaces import TemplateProvider
 
 
 CHINA_TIMEZONE = timezone(timedelta(hours=8))
@@ -55,7 +56,31 @@ DEFAULT_TEMPLATE = Path(__file__).resolve().parents[2] / "config" / "templates" 
 DEFAULT_DIGEST_TEMPLATE = Path(__file__).resolve().parents[2] / "config" / "templates" / "telegram_digest.html"
 
 
-def render_message(item: ContentItem, result: AnalysisResult, template_path: Path | None = None) -> str:
+def _template_content(
+    template_id: str,
+    path: Path,
+    fallback: str,
+    template_provider: TemplateProvider | None,
+) -> str:
+    if template_provider is not None:
+        try:
+            published = template_provider.get_published_template(template_id)
+            if published:
+                return published
+        except Exception:
+            pass
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+
+
+def render_message(
+    item: ContentItem,
+    result: AnalysisResult,
+    template_path: Path | None = None,
+    template_provider: TemplateProvider | None = None,
+) -> str:
     def esc(value: str, limit: int | None = None) -> str:
         text = re.sub(r"\s+", " ", value or "").strip()
         if limit and len(text) > limit:
@@ -73,31 +98,37 @@ def render_message(item: ContentItem, result: AnalysisResult, template_path: Pat
         "my_x_link": _creator_x_link(),
         "links_line": _links_line(item.url),
     }
-    path = template_path or DEFAULT_TEMPLATE
-    try:
-        template = path.read_text(encoding="utf-8")
-    except OSError:
-        template = "<b>【{category_line}】{title}</b>\n\n{summary}\n\n<b>【重点】</b>\n{why_it_matters}\n\n{links_line}"
+    template = _template_content(
+        "realtime",
+        template_path or DEFAULT_TEMPLATE,
+        "<b>【{category_line}】{title}</b>\n\n{summary}\n\n<b>【重点】</b>\n{why_it_matters}\n\n{links_line}",
+        template_provider,
+    )
     return template.format(**values)
 
 
-def render_digest(report: DigestReport, template_path: Path | None = None) -> str:
+def render_digest(
+    report: DigestReport,
+    template_path: Path | None = None,
+    template_provider: TemplateProvider | None = None,
+) -> str:
     def esc(value: str, limit: int | None = None) -> str:
         text = str(value or "").strip()
         if limit and len(text) > limit:
             text = f"{text[:limit - 1].rstrip()}…"
         return html.escape(text)
 
-    path = template_path or DEFAULT_DIGEST_TEMPLATE
-    try:
-        template = path.read_text(encoding="utf-8")
-    except OSError:
-        template = (
+    template = _template_content(
+        "digest",
+        template_path or DEFAULT_DIGEST_TEMPLATE,
+        (
             "<b>{report_title} · {period_label}</b>\n\n{overview}\n\n"
             "<b>AI 前沿信息</b>\n{frontier_items}\n\n"
             "<b>AI 应用</b>\n{application_items}\n\n"
             "<b>关键观察</b>\n{key_takeaways}\n\n{source_links}\n{my_x_link}"
-        )
+        ),
+        template_provider,
+    )
     values = {
         "report_title": esc(report.report_title, 40),
         "period_label": esc(report.period_label, 80),
@@ -140,6 +171,7 @@ def process_item(
     analyzer,
     notifier=None,
     notification_policy: NotificationPolicy | None = None,
+    template_provider: TemplateProvider | None = None,
 ) -> ProcessOutcome:
     created = store.save_item(item)
     if not created and store.item_status(item.item_id) == "baselined":
@@ -163,7 +195,9 @@ def process_item(
         if row["item_id"] != item.item_id:
             continue
         try:
-            message_id = deliver_message(notifier, item, render_message(item, result))
+            message_id = deliver_message(
+                notifier, item, render_message(item, result, template_provider=template_provider)
+            )
             store.mark_sent(item.item_id, message_id)
             return ProcessOutcome(created=created, analyzed=True, sent=True)
         except Exception as exc:
@@ -172,7 +206,11 @@ def process_item(
     return ProcessOutcome(created=created, analyzed=True)
 
 
-def send_pending(store: SQLiteStore, notifier) -> int:
+def send_pending(
+    store: SQLiteStore,
+    notifier,
+    template_provider: TemplateProvider | None = None,
+) -> int:
     sent = 0
     for row in store.pending_deliveries():
         item = ContentItem(
@@ -188,7 +226,9 @@ def send_pending(store: SQLiteStore, notifier) -> int:
             display_title=row["display_title"] or row["title"],
         )
         try:
-            message_id = deliver_message(notifier, item, render_message(item, result))
+            message_id = deliver_message(
+                notifier, item, render_message(item, result, template_provider=template_provider)
+            )
             store.mark_sent(row["item_id"], message_id)
             sent += 1
         except Exception as exc:

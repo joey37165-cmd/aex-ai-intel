@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 data/*.json
 data/*.db*
+web/node_modules/
+web/dist/
+.gstack/

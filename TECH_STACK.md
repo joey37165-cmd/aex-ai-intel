@@ -106,15 +106,16 @@ ai-intel-api.service
 
 ## 当前纵向切片的实现状态
 
-为了先验证完整业务链路，当前 `app/` 切片暂时使用 Python 标准库实现：
+当前采集切片仍主要使用 Python 标准库，模板管理纵向切片已经引入 FastAPI 和 Uvicorn：
 
 ```text
 sqlite3 + WAL       SQLite Repository 的第一版实现
 urllib.request      外部 HTTP 调用的第一版实现
 显式 Worker 调度    以来源轮询间隔驱动采集，并调度幂等的日报/周报
+FastAPI + Uvicorn   私有模板管理 API 和前端静态文件
 ```
 
-这些实现都位于适配器或基础设施边界内，Domain 和 Application 不依赖具体库。正式服务器部署前再引入 SQLAlchemy/Alembic、httpx 和调度库，并为替换增加集成测试；不会把临时代码散落到业务层。
+这些实现都位于适配器或基础设施边界内，Domain 和 Application 不依赖具体库。后续只有在迁移、并发或可观测性需求明确时才引入 SQLAlchemy/Alembic、httpx 和调度库，并为替换增加集成测试；不会为了技术栈表而提前增加小服务器的维护负担。
 
 ## 尚未确定
 
@@ -130,4 +131,4 @@ urllib.request      外部 HTTP 调用的第一版实现
 
 ### 管理区认证
 
-公开只读模式已经确定，管理区具体认证方式在前端阶段确定。无论选择哪种方案，所有写接口都必须默认拒绝未认证访问。
+第一版采用至少 32 个字符的随机 Bearer Token，配置在服务器 `ADMIN_API_TOKEN` 环境变量中。API 只监听 `127.0.0.1`，初期通过 SSH 隧道访问，不直接开放公网端口。未来需要多用户、审计或细粒度权限时，再替换为正式登录和服务端会话；模板业务与版本存储接口不依赖具体认证方案。

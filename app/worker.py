@@ -21,6 +21,7 @@ from app.adapters.sources.x import XSourceAdapter
 from app.adapters.telegram.bot import build_notifier
 from app.application.pipeline import process_item, render_digest, render_message, send_pending
 from app.application.reports import run_reports_tick
+from app.application.templates import seed_templates
 from app.domain.models import AnalysisResult, ContentItem, DigestReport
 from app.domain.policies import NotificationPolicy
 from app.infrastructure.store import SQLiteStore
@@ -84,7 +85,7 @@ def run_once(
     discovered = analyzed = sent = errors = 0
     last_error = None
     if not baseline and notifier is not None:
-        sent += send_pending(store, notifier)
+        sent += send_pending(store, notifier, template_provider=store)
     for source in sources:
         adapter = build_source_adapter(source)
         first_poll_baseline = (
@@ -110,7 +111,10 @@ def run_once(
                 try:
                     if isinstance(adapter, ContentEnricher):
                         item = adapter.enrich(item, source)
-                    outcome = process_item(store, item, analyzer, notifier, notification_policy)
+                    outcome = process_item(
+                        store, item, analyzer, notifier, notification_policy,
+                        template_provider=store,
+                    )
                     discovered += int(outcome.created)
                     analyzed += int(outcome.analyzed)
                     sent += int(outcome.sent)
@@ -144,7 +148,9 @@ def daemon(
 ) -> None:
     interval = int(os.environ.get("WORKER_TICK_SECONDS", "15"))
     while not STOP:
-        report_result = run_reports_tick(store, report_config, digest_generator, notifier)
+        report_result = run_reports_tick(
+            store, report_config, digest_generator, notifier, template_provider=store
+        )
         if any(report_result.values()):
             print(f"[INFO] reports={report_result}")
         result = run_daemon_tick(store, sources, analyzer, notifier, notification_policy)
@@ -167,7 +173,7 @@ def run_daemon_tick(
     if due_sources:
         return run_once(store, due_sources, analyzer, notifier, notification_policy=notification_policy)
 
-    sent = send_pending(store, notifier)
+    sent = send_pending(store, notifier, template_provider=store)
     if sent:
         return {"discovered": 0, "analyzed": 0, "sent": sent, "errors": 0}
     return None
@@ -199,6 +205,7 @@ def main() -> int:
     notification_policy = load_notification_policy(args.publishing_config)
     report_config = json.loads(args.report_config.read_text(encoding="utf-8"))
     store = SQLiteStore(args.db)
+    seed_templates(store)
     if args.status:
         print(json.dumps(store.status_summary(), ensure_ascii=False, indent=2))
         store.close()
@@ -233,7 +240,7 @@ def main() -> int:
             why_it_matters="可能直接影响模型选型、现有工作流成本和后续内容选题。",
             suggested_action="立即查看官方说明并评估是否需要测试或迁移。", confidence=0.95,
         )
-        print(render_message(sample, result))
+        print(render_message(sample, result, template_provider=store))
         store.close()
         return 0
     if args.preview_digest:
@@ -244,11 +251,14 @@ def main() -> int:
             application_items="1. Agent 工作流\n2. 值得关注的 GitHub AI 项目",
             key_takeaways="模型能力持续提升，实际应用和工作流正在加速落地。",
         )
-        print(render_digest(report))
+        print(render_digest(report, template_provider=store))
         store.close()
         return 0
     if args.reports_once:
-        result = run_reports_tick(store, report_config, build_digest_generator(), build_notifier())
+        result = run_reports_tick(
+            store, report_config, build_digest_generator(), build_notifier(),
+            template_provider=store,
+        )
         print(f"[INFO] reports={result}")
         store.close()
         return 0

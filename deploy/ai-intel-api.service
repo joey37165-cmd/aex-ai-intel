@@ -1,0 +1,19 @@
+[Unit]
+Description=Aex AI intelligence management API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aex-ai
+Group=aex-ai
+WorkingDirectory=/opt/aex-ai-intel
+ExecStart=/opt/aex-ai-intel/.venv/bin/uvicorn app.api:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=15
+EnvironmentFile=/opt/aex-ai-intel/.env
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
