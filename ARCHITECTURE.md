@@ -73,6 +73,8 @@ discovered -> notify -> queued -> sent
                          +-> ignore / review / retry
 ```
 
+状态常量集中定义在 `app/domain/status.py`。情报状态、投递状态和报告状态是三套独立的状态集合，即使它们都包含 `sent`，也不能混用。
+
 ### 3.3 AI 分析模块
 
 应用流程只依赖分析器接口，不依赖 DeepSeek SDK：

@@ -194,11 +194,7 @@ def restore_version(
         _detail_or_404(store, template_id)
         result = store.restore_template_version(template_id, version, request.expected_revision)
         if result is None:
-            existing = store.connection.execute(
-                "SELECT 1 FROM message_template_versions WHERE template_id=? AND version=?",
-                (template_id, version),
-            ).fetchone()
-            if existing is None:
+            if not store.template_version_exists(template_id, version):
                 raise HTTPException(status_code=404, detail="历史版本不存在")
             raise _conflict()
         return _serialize_template(result)

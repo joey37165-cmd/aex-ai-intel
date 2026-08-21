@@ -18,6 +18,7 @@ from app.application.reports import run_reports_tick
 from app.application.templates import seed_templates
 from app.domain.models import AnalysisResult, ContentItem, DigestReport
 from app.domain.policies import NotificationPolicy
+from app.domain.status import ItemStatus
 from app.infrastructure.store import SQLiteStore
 from app.infrastructure.config import load_dotenv
 from app.ports.interfaces import ContentEnricher
@@ -78,7 +79,7 @@ def run_once(
             for item in adapter.fetch(source):
                 source_item_count += 1
                 if baseline or first_poll_baseline:
-                    if store.save_item(item, status="baselined"):
+                    if store.save_item(item, status=ItemStatus.BASELINED):
                         discovered += 1
                     continue
                 if store.item_status(item.item_id) is not None:

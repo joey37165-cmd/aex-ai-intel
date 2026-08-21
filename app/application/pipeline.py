@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.domain.models import AnalysisResult, ContentItem, DigestReport, ProcessOutcome
 from app.domain.policies import NotificationPolicy
+from app.domain.status import ItemStatus
 from app.infrastructure.store import SQLiteStore
 from app.ports.interfaces import TemplateProvider
 
@@ -187,7 +188,7 @@ def process_item(
         model_name=getattr(analyzer, "model_name", "unknown"),
         prompt_version=getattr(analyzer, "prompt_version", "unknown"),
     )
-    if result.decision != "notify":
+    if result.decision != ItemStatus.NOTIFY:
         return ProcessOutcome(created=created, analyzed=True)
     duplicate = store.find_recent_notification_duplicate(item)
     if duplicate is not None:

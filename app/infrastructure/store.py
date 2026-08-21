@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.domain.models import AnalysisResult, ContentItem
 from app.domain.deduplication import are_semantic_duplicates
+from app.domain.status import DeliveryStatus, ItemStatus, ReportStatus
 
 
 def utc_now() -> str:
@@ -191,6 +192,13 @@ class SQLiteStore:
             return None
         return self.save_template_draft(template_id, str(row["content"]), expected_revision)
 
+    def template_version_exists(self, template_id: str, version: int) -> bool:
+        row = self.connection.execute(
+            "SELECT 1 FROM message_template_versions WHERE template_id=? AND version=?",
+            (template_id, version),
+        ).fetchone()
+        return row is not None
+
     def get_published_template(self, template_id: str) -> str | None:
         row = self.connection.execute(
             """SELECT v.content FROM message_templates t
@@ -208,7 +216,7 @@ class SQLiteStore:
         row = self.connection.execute("SELECT COUNT(*) AS count FROM items").fetchone()
         return int(row["count"])
 
-    def save_item(self, item: ContentItem, status: str = "discovered") -> bool:
+    def save_item(self, item: ContentItem, status: str = ItemStatus.DISCOVERED) -> bool:
         cursor = self.connection.execute(
             """INSERT OR IGNORE INTO items
             (item_id, source_id, source_name, category, title, url, summary, published_at,
@@ -269,13 +277,13 @@ class SQLiteStore:
             a.category, a.priority, a.summary, a.why_it_matters,
             COALESCE(i.published_at, i.discovered_at) AS occurred_at
             FROM analyses a JOIN items i ON i.item_id=a.item_id
-            WHERE a.decision='notify' AND a.priority IN ('S', 'A')
+            WHERE a.decision=? AND a.priority IN ('S', 'A')
               AND julianday(COALESCE(i.published_at, i.discovered_at)) >= julianday(?)
               AND julianday(COALESCE(i.published_at, i.discovered_at)) < julianday(?)
             ORDER BY CASE a.priority WHEN 'S' THEN 0 ELSE 1 END,
                      julianday(COALESCE(i.published_at, i.discovered_at)) DESC
             LIMIT ?""",
-            (period_start, period_end, limit),
+            (ItemStatus.NOTIFY, period_start, period_end, limit),
         ))
 
     def ensure_report(self, report_id: str, report_type: str, period_start: str, period_end: str) -> sqlite3.Row:
@@ -298,25 +306,25 @@ class SQLiteStore:
     def retryable_reports(self) -> list[sqlite3.Row]:
         return list(self.connection.execute(
             """SELECT * FROM reports
-            WHERE status IN ('pending', 'ready')
-               OR (status='retry' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
+            WHERE status IN (?, ?)
+               OR (status=? AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
             ORDER BY period_end ASC""",
-            (utc_now(),),
+            (ReportStatus.PENDING, ReportStatus.READY, ReportStatus.RETRY, utc_now()),
         ))
 
     def save_report_payload(self, report_id: str, payload: dict, prompt_version: str) -> None:
         self.connection.execute(
-            """UPDATE reports SET status='ready', payload_json=?, prompt_version=?,
+            """UPDATE reports SET status=?, payload_json=?, prompt_version=?,
             last_error=NULL, next_attempt_at=NULL, updated_at=? WHERE report_id=?""",
-            (json.dumps(payload, ensure_ascii=False), prompt_version, utc_now(), report_id),
+            (ReportStatus.READY, json.dumps(payload, ensure_ascii=False), prompt_version, utc_now(), report_id),
         )
         self.connection.commit()
 
     def mark_report_sent(self, report_id: str, message_id: str) -> None:
         self.connection.execute(
-            """UPDATE reports SET status='sent', telegram_message_id=?, last_error=NULL,
+            """UPDATE reports SET status=?, telegram_message_id=?, last_error=NULL,
             next_attempt_at=NULL, updated_at=? WHERE report_id=?""",
-            (message_id, utc_now(), report_id),
+            (ReportStatus.SENT, message_id, utc_now(), report_id),
         )
         self.connection.commit()
 
@@ -324,9 +332,9 @@ class SQLiteStore:
         delay = min(3600, 2 ** min(attempts, 10))
         next_attempt = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
         self.connection.execute(
-            """UPDATE reports SET status='retry', attempts=?, last_error=?,
+            """UPDATE reports SET status=?, attempts=?, last_error=?,
             next_attempt_at=?, updated_at=? WHERE report_id=?""",
-            (attempts, error[:500], next_attempt, utc_now(), report_id),
+            (ReportStatus.RETRY, attempts, error[:500], next_attempt, utc_now(), report_id),
         )
         self.connection.commit()
 
@@ -364,12 +372,12 @@ class SQLiteStore:
             """SELECT i.item_id, i.source_name, i.title, i.summary,
             a.display_title, a.summary AS analysis_summary
             FROM analyses a JOIN items i ON i.item_id=a.item_id
-            WHERE a.decision='notify'
+            WHERE a.decision=?
               AND julianday(COALESCE(i.published_at, i.discovered_at)) >= julianday(?)
               AND julianday(COALESCE(i.published_at, i.discovered_at)) <= julianday(?)
               AND i.item_id != ?
             ORDER BY COALESCE(i.published_at, i.discovered_at) ASC""",
-            (start, end, item.item_id),
+            (ItemStatus.NOTIFY, start, end, item.item_id),
         ).fetchall()
         for row in rows:
             if are_semantic_duplicates(
@@ -387,8 +395,9 @@ class SQLiteStore:
             a.category AS analysis_category, a.summary AS analysis_summary, a.priority,
             a.why_it_matters, a.suggested_action, a.display_title FROM deliveries d
             JOIN items i ON i.item_id=d.item_id JOIN analyses a ON a.item_id=d.item_id
-            WHERE d.status='pending' OR (d.status='retry' AND
-            (d.next_attempt_at IS NULL OR d.next_attempt_at <= ?)) ORDER BY i.published_at ASC""", (utc_now(),)
+            WHERE d.status=? OR (d.status=? AND
+            (d.next_attempt_at IS NULL OR d.next_attempt_at <= ?)) ORDER BY i.published_at ASC""",
+            (DeliveryStatus.PENDING, DeliveryStatus.RETRY, utc_now())
         ))
 
     def review_items(self, limit: int = 50) -> list[sqlite3.Row]:
@@ -404,18 +413,18 @@ class SQLiteStore:
 
     def mark_sent(self, item_id: str, message_id: str) -> None:
         self.connection.execute(
-            "UPDATE deliveries SET status='sent', telegram_message_id=?, updated_at=? WHERE item_id=?",
-            (message_id, utc_now(), item_id),
+            "UPDATE deliveries SET status=?, telegram_message_id=?, updated_at=? WHERE item_id=?",
+            (DeliveryStatus.SENT, message_id, utc_now(), item_id),
         )
-        self.connection.execute("UPDATE items SET status='sent' WHERE item_id=?", (item_id,))
+        self.connection.execute("UPDATE items SET status=? WHERE item_id=?", (ItemStatus.SENT, item_id))
         self.connection.commit()
 
     def mark_retry(self, item_id: str, error: str, attempts: int) -> None:
         delay = min(3600, 2 ** min(attempts, 10))
         next_attempt = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
         self.connection.execute(
-            "UPDATE deliveries SET status='retry', attempts=?, last_error=?, next_attempt_at=?, updated_at=? WHERE item_id=?",
-            (attempts, error[:500], next_attempt, utc_now(), item_id),
+            "UPDATE deliveries SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=? WHERE item_id=?",
+            (DeliveryStatus.RETRY, attempts, error[:500], next_attempt, utc_now(), item_id),
         )
         self.connection.commit()
 
