@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "telegram": {
-    "allowed_priorities": ["S", "A"],
+    "allowed_priorities": ["S", "A", "B"],
     "min_confidence": 0.75
   }
 }

@@ -75,9 +75,9 @@ def _event_features(data: dict[str, Any], summary: str) -> EventFeatures:
 
 
 def _result(data: dict[str, Any], item: ContentItem) -> AnalysisResult:
-    decision = str(data.get("decision", "review")).lower()
-    if decision not in {"notify", "review", "ignore"}:
-        decision = "review"
+    decision = str(data.get("decision", "ignore")).lower()
+    if decision not in {"notify", "ignore"}:
+        decision = "ignore"
     priority = str(data.get("priority", "A")).upper()
     if priority not in {"S", "A", "B"}:
         priority = "B"

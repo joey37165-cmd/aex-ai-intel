@@ -44,7 +44,7 @@ def load_sources(path: Path) -> list[dict]:
 def load_notification_policy(path: Path) -> NotificationPolicy:
     data = json.loads(path.read_text(encoding="utf-8"))
     telegram = data.get("telegram", {})
-    priorities = frozenset(str(value).upper() for value in telegram.get("allowed_priorities", ["S", "A"]))
+    priorities = frozenset(str(value).upper() for value in telegram.get("allowed_priorities", ["S", "A", "B"]))
     confidence = float(telegram.get("min_confidence", 0.75))
     if not priorities.issubset({"S", "A", "B"}):
         raise ValueError("publishing.json 中 allowed_priorities 只能包含 S、A、B")
@@ -180,8 +180,6 @@ def main() -> int:
     parser.add_argument("--daemon", action="store_true", help="常驻自动轮询")
     parser.add_argument("--dry-run", action="store_true", help="分析并入队，但不发送 Telegram")
     parser.add_argument("--status", action="store_true", help="显示运行状态")
-    parser.add_argument("--review", action="store_true", help="显示待人工复核的内容")
-    parser.add_argument("--limit", type=int, default=50, help="--review 最多显示条数")
     parser.add_argument("--prompt-status", action="store_true", help="检查当前 Prompt 来源和版本")
     parser.add_argument("--preview-template", action="store_true", help="预览 Telegram HTML 模板，不发送")
     parser.add_argument("--preview-digest", action="store_true", help="预览日报/周报共用模板，不发送")
@@ -194,11 +192,6 @@ def main() -> int:
     seed_templates(store)
     if args.status:
         print(json.dumps(store.status_summary(), ensure_ascii=False, indent=2))
-        store.close()
-        return 0
-    if args.review:
-        rows = [dict(row) for row in store.review_items(args.limit)]
-        print(json.dumps(rows, ensure_ascii=False, indent=2))
         store.close()
         return 0
     if args.prompt_status:

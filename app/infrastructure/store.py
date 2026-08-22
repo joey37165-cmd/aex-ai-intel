@@ -97,6 +97,10 @@ class SQLiteStore:
         item_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(items)")}
         if "image_url" not in item_columns:
             self.connection.execute("ALTER TABLE items ADD COLUMN image_url TEXT")
+        # Legacy review rows were terminal and could never be acted on. Preserve
+        # their analysis payload for audit, but retire the unsupported state.
+        self.connection.execute("UPDATE analyses SET decision=? WHERE decision='review'", (ItemStatus.IGNORE,))
+        self.connection.execute("UPDATE items SET status=? WHERE status='review'", (ItemStatus.IGNORE,))
         self.connection.commit()
 
     def initialize_template(self, template_id: str, name: str, description: str, content: str) -> None:
@@ -454,17 +458,6 @@ class SQLiteStore:
             WHERE d.status=? OR (d.status=? AND
             (d.next_attempt_at IS NULL OR d.next_attempt_at <= ?)) ORDER BY i.published_at ASC""",
             (DeliveryStatus.PENDING, DeliveryStatus.RETRY, utc_now())
-        ))
-
-    def review_items(self, limit: int = 50) -> list[sqlite3.Row]:
-        limit = max(1, min(limit, 200))
-        return list(self.connection.execute(
-            """SELECT i.item_id, i.source_name, i.title, i.url, i.published_at,
-            a.priority, a.category, a.summary, a.why_it_matters, a.suggested_action,
-            a.confidence, a.model_name, a.prompt_version, a.display_title, a.created_at
-            FROM analyses a JOIN items i ON i.item_id=a.item_id
-            WHERE a.decision='review'
-            ORDER BY COALESCE(i.published_at, i.discovered_at) DESC LIMIT ?""", (limit,)
         ))
 
     def mark_sent(self, item_id: str, message_id: str) -> None:

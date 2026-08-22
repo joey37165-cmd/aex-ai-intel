@@ -7,7 +7,6 @@ class ItemStatus:
     DISCOVERED = "discovered"
     BASELINED = "baselined"
     NOTIFY = "notify"
-    REVIEW = "review"
     IGNORE = "ignore"
     SENT = "sent"
 
@@ -34,7 +33,6 @@ ITEM_STATUSES = frozenset({
     ItemStatus.DISCOVERED,
     ItemStatus.BASELINED,
     ItemStatus.NOTIFY,
-    ItemStatus.REVIEW,
     ItemStatus.IGNORE,
     ItemStatus.SENT,
 })

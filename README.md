@@ -65,7 +65,6 @@ python telegram_poc.py run
 python -m app.worker --db data/test-runtime.db --bootstrap
 python -m app.worker --db data/test-runtime.db --dry-run
 python -m app.worker --db data/runtime.db --status
-python -m app.worker --db data/runtime.db --review
 python -m app.worker --db data/runtime.db --prompt-status
 python -m app.worker --db data/runtime.db --preview-template
 python -m app.worker --db data/runtime.db --preview-digest
@@ -192,14 +191,14 @@ AI 先输出结构化 JSON，程序再使用固定模板渲染 Telegram 消息�
 
 报告摘要使用独立 Prompt。仓库 fallback 位于 `config/prompts/digest_summary.md` 和 `config/prompts/digest_summary_user.md`；Langfuse Prompt 名默认为 `ai-intelligence-digest`，可通过 `LANGFUSE_DIGEST_PROMPT_NAME` 与 `LANGFUSE_DIGEST_PROMPT_LABEL` 修改。Langfuse 中尚未创建该 Prompt 或暂时不可用时，系统继续使用本地 fallback。
 
-Telegram 发布门槛位于 `config/publishing.json`。DeepSeek 先给出结构化判断，程序再执行确定性门槛；当前仅允许置信度不低于 `0.75` 的 S、A级 `notify` 结果进入发送队列。未通过门槛的结果会降为 `review`，并在分析原始数据中记录原因，不会直接推送。
+Telegram 发布门槛位于 `config/publishing.json`。DeepSeek 只输出 `notify` 或 `ignore`，程序再执行确定性门槛；S、A、B 级的高价值信息都可以推送，低于 `0.75` 置信度或不符合输出契约的结果会安全降为 `ignore`。优先级只表达重要程度，不再决定信息是否能够推送。
 
 跨来源去重采用两阶段流程：第一轮筛选同时抽取 `event` 特征；本地标题和摘要规则只负责寻找 72 小时内的疑似候选，不直接认定重复。命中候选后，第二个去重 Prompt 才会调用 DeepSeek，输出 `duplicate`、`update` 或 `independent`。只有 `duplicate` 且置信度达到 `DEDUP_MIN_CONFIDENCE`（默认 `0.80`）才会抑制推送；`update`、`independent`、低置信度或调用失败均会放行。每次审查写入 SQLite 的 `dedup_reviews`，便于追踪模型、Prompt 版本和判断理由。
 
 ```json
 {
   "telegram": {
-    "allowed_priorities": ["S", "A"],
+    "allowed_priorities": ["S", "A", "B"],
     "min_confidence": 0.75
   }
 }
@@ -207,11 +206,7 @@ Telegram 发布门槛位于 `config/publishing.json`。DeepSeek 先给出结构�
 
 修改 Prompt 后同步更新 `.env` 中的 `PROMPT_VERSION`，便于后续比较不同版本的筛选效果。`--status` 会显示分析决策与优先级分布，用于观察规则是否过松或过严。
 
-`--review` 是本地只读复核队列，显示 AI 判为 `review` 的内容，不会重新调用模型、发送 Telegram 或修改状态：
-
-```powershell
-python -m app.worker --db data/runtime.db --review --limit 20
-```
+情报筛选不再使用无法自动闭环的 `review` 状态。正文抓取或外部调用失败属于技术故障，应进入有上限的重试流程；历史 `review` 记录在打开数据库时迁移为 `ignore`，不会补发旧消息，原始分析数据仍保留用于审计。
 
 第一阶段通过 OpenAI-compatible 适配器调用 DeepSeek API。API 地址、模型名和密钥全部通过配置注入，Domain 和 Application 层不得依赖 DeepSeek SDK 或具体模型名称。
 

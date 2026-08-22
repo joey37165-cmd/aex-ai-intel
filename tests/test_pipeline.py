@@ -55,7 +55,8 @@ def item(item_id="one", title="New model release"):
 class PipelineTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = SQLiteStore(Path(self.directory.name) / "runtime.db")
+        self.db_path = Path(self.directory.name) / "runtime.db"
+        self.store = SQLiteStore(self.db_path)
 
     def tearDown(self):
         self.store.close()
@@ -225,33 +226,47 @@ class PipelineTests(unittest.TestCase):
         self.assertLessEqual(len(text), 4000)
         self.assertNotIn("x" * 100, text)
 
-    def test_low_confidence_notification_is_held_for_review(self):
+    def test_low_confidence_notification_is_ignored(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.74)
         outcome = process_item(self.store, item(), FixedAnalyzer(result), FakeNotifier(), NotificationPolicy())
         stored = self.store.connection.execute("SELECT decision, raw_json FROM analyses").fetchone()
         self.assertEqual(outcome, ProcessOutcome(created=True, analyzed=True))
-        self.assertEqual(stored["decision"], "review")
+        self.assertEqual(stored["decision"], "ignore")
         self.assertIn("confidence_below_0.75", stored["raw_json"])
         self.assertEqual(self.store.connection.execute("SELECT COUNT(*) FROM deliveries").fetchone()[0], 0)
 
-    def test_b_priority_notification_is_held_for_review(self):
+    def test_b_priority_notification_is_allowed(self):
         result = AnalysisResult("notify", "B", "行业", "摘要", "价值", "观察", 0.99)
-        outcome = process_item(self.store, item(), FixedAnalyzer(result), FakeNotifier(), NotificationPolicy())
+        notifier = FakeNotifier()
+        outcome = process_item(self.store, item(), FixedAnalyzer(result), notifier, NotificationPolicy())
         stored = self.store.connection.execute("SELECT decision, raw_json FROM analyses").fetchone()
-        self.assertEqual(outcome, ProcessOutcome(created=True, analyzed=True))
-        self.assertEqual(stored["decision"], "review")
-        self.assertIn("priority_B_not_allowed", stored["raw_json"])
+        self.assertEqual(outcome, ProcessOutcome(created=True, analyzed=True, sent=True))
+        self.assertEqual(stored["decision"], "notify")
+        self.assertEqual(len(notifier.messages), 1)
         summary = self.store.status_summary()
-        self.assertEqual(summary["analysis_decisions"], {"review": 1})
+        self.assertEqual(summary["analysis_decisions"], {"notify": 1})
         self.assertEqual(summary["analysis_priorities"], {"B": 1})
 
-    def test_review_items_are_readable_without_changing_state(self):
+    def test_legacy_review_decision_is_normalized_to_ignore(self):
         result = AnalysisResult("review", "B", "行业", "摘要", "价值", "观察", 0.5)
         process_item(self.store, item(), FixedAnalyzer(result), None)
-        rows = self.store.review_items()
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["title"], "New model release")
-        self.assertEqual(self.store.item_status("one"), "review")
+        row = self.store.connection.execute("SELECT decision, raw_json FROM analyses").fetchone()
+        self.assertEqual(row["decision"], "ignore")
+        self.assertIn("unsupported_decision", row["raw_json"])
+        self.assertEqual(self.store.item_status("one"), "ignore")
+
+    def test_existing_review_rows_are_migrated_without_delivery(self):
+        self.store.save_item(item())
+        self.store.save_analysis(
+            "one", AnalysisResult("review", "A", "行业", "摘要", "价值", "观察", 0.8),
+        )
+        self.store.close()
+        self.store = SQLiteStore(self.db_path)
+
+        analysis = self.store.connection.execute("SELECT decision FROM analyses").fetchone()
+        self.assertEqual(analysis["decision"], "ignore")
+        self.assertEqual(self.store.item_status("one"), "ignore")
+        self.assertEqual(self.store.connection.execute("SELECT COUNT(*) FROM deliveries").fetchone()[0], 0)
 
     def test_source_poll_state_is_persisted(self):
         self.assertTrue(self.store.source_is_due("source-one"))

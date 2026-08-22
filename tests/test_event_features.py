@@ -106,6 +106,10 @@ class EventFeatureTests(unittest.TestCase):
         self.assertIsNone(result.event.event_time)
         self.assertEqual(result.event.core_claim, "摘要")
 
+    def test_legacy_review_output_is_treated_as_ignore(self):
+        result = _result({"decision": "review", "summary": "摘要"}, make_item())
+        self.assertEqual(result.decision, "ignore")
+
     def test_rule_analyzer_emits_fallback_event(self):
         result = RuleBasedAnalyzer().analyze(make_item())
         self.assertEqual(result.event.event_type, "other")

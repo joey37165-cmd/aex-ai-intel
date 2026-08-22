@@ -15,7 +15,7 @@ class StatusModelTests(unittest.TestCase):
         self.assertEqual(
             ITEM_STATUSES,
             frozenset({
-                "discovered", "baselined", "notify", "review", "ignore", "sent",
+                "discovered", "baselined", "notify", "ignore", "sent",
             }),
         )
         self.assertEqual(ItemStatus.NOTIFY, "notify")

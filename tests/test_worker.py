@@ -42,7 +42,7 @@ class WorkerTests(unittest.TestCase):
     def test_publishing_policy_is_loaded_from_versioned_config(self):
         path = Path(__file__).resolve().parents[1] / "config" / "publishing.json"
         policy = load_notification_policy(path)
-        self.assertEqual(policy.allowed_priorities, frozenset({"S", "A"}))
+        self.assertEqual(policy.allowed_priorities, frozenset({"S", "A", "B"}))
         self.assertEqual(policy.min_confidence, 0.75)
 
     def test_source_adapter_types_are_explicit(self):
