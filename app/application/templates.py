@@ -54,7 +54,7 @@ class TemplateValidationError(ValueError):
 class _TelegramHTMLValidator(HTMLParser):
     ALLOWED_TAGS = {
         "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
-        "a", "code", "pre", "blockquote", "tg-spoiler", "tg-emoji",
+        "a", "code", "pre", "blockquote", "tg-spoiler",
     }
 
     def __init__(self, *args, **kwargs) -> None:
@@ -68,9 +68,6 @@ class _TelegramHTMLValidator(HTMLParser):
             unsupported = [name for name, _ in attrs if name != "href"]
             if unsupported:
                 raise TemplateValidationError("链接标签只允许 href 属性")
-        elif tag == "tg-emoji":
-            if len(attrs) != 1 or attrs[0][0] != "emoji-id" or not (attrs[0][1] or "").isdecimal():
-                raise TemplateValidationError("自定义 Emoji 标签只允许数字 emoji-id 属性")
         elif attrs:
             raise TemplateValidationError(f"<{tag}> 标签不允许属性")
         self.stack.append(tag)
