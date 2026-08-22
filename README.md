@@ -206,7 +206,7 @@ Telegram 发布门槛位于 `config/publishing.json`。DeepSeek 只输出 `notif
 
 修改 Prompt 后同步更新 `.env` 中的 `PROMPT_VERSION`，便于后续比较不同版本的筛选效果。`--status` 会显示分析决策与优先级分布，用于观察规则是否过松或过严。
 
-情报筛选不再使用无法自动闭环的 `review` 状态。正文抓取或外部调用失败属于技术故障，应进入有上限的重试流程；历史 `review` 记录在打开数据库时迁移为 `ignore`，不会补发旧消息，原始分析数据仍保留用于审计。
+情报筛选不再使用无法自动闭环的 `review` 状态。正文抓取或外部调用失败属于技术故障，不得作为内容决策；后续应由独立的有上限重试状态处理。历史 `review` 记录在打开数据库时迁移为 `ignore`，不会补发旧消息，原始分析数据仍保留用于审计。
 
 第一阶段通过 OpenAI-compatible 适配器调用 DeepSeek API。API 地址、模型名和密钥全部通过配置注入，Domain 和 Application 层不得依赖 DeepSeek SDK 或具体模型名称。
 

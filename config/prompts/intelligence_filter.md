@@ -87,7 +87,7 @@
 信息不属于关注范围、没有实际价值、只有空泛营销，或证据不足以确认任何具体事实。
 </decision>
 
-只能输出 notify 或 ignore，不得输出 review。技术错误和正文抓取失败由程序的重试机制处理，不属于内容决策。
+只能输出 notify 或 ignore，不得输出 review。技术错误和正文抓取失败不属于内容决策，也不得使用 review 表示。
 </decision_policy>
 
 # 七、优先级
