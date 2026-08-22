@@ -123,7 +123,7 @@ def _format_summary(value: str) -> str:
     if not lines:
         return ""
     if any(re.match(r"^[（(]\d+[）)]", line) for line in lines):
-        return "\n".join(lines)
+        return "\n\n".join(lines)
 
     points = []
     for line in lines:
@@ -132,7 +132,7 @@ def _format_summary(value: str) -> str:
         return lines[0]
     if len(points) > 4:
         points = points[:3] + ["".join(points[3:])]
-    return "\n".join(f"（{index}）{point}" for index, point in enumerate(points, start=1))
+    return "\n\n".join(f"（{index}）{point}" for index, point in enumerate(points, start=1))
 
 
 def render_digest(

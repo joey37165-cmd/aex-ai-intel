@@ -113,19 +113,19 @@ class PipelineTests(unittest.TestCase):
             "notify", "A", "模型", "（1）第一条事实。\n（2）第二条事实。", "不展示", "查看", 0.9,
         )
         text = render_message(item(), result)
-        self.assertIn("（1）第一条事实。\n（2）第二条事实。", text)
+        self.assertIn("（1）第一条事实。\n\n（2）第二条事实。", text)
 
     def test_render_numbers_unformatted_summary_sentences_without_inventing_text(self):
         result = AnalysisResult(
             "notify", "A", "模型", "第一条事实。第二条事实；第三条事实。", "不展示", "查看", 0.9,
         )
         text = render_message(item(), result)
-        self.assertIn("（1）第一条事实。\n（2）第二条事实；\n（3）第三条事实。", text)
+        self.assertIn("（1）第一条事实。\n\n（2）第二条事实；\n\n（3）第三条事实。", text)
 
     def test_render_uses_beijing_time(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         text = render_message(item(), result)
-        self.assertIn("【AI 前沿信息】</b>\n<b>New model release", text)
+        self.assertIn("【AI 前沿信息】</b>\nNew model release", text)
         self.assertNotIn("S级", text)
         self.assertNotIn("建议动作", text)
         self.assertNotIn("来源：", text)
@@ -145,7 +145,7 @@ class PipelineTests(unittest.TestCase):
             display_title="🚀 Claude 4.1 发布：更强的 Agent 能力",
         )
         text = render_message(item(title="🚀 Claude 4.1 released"), result)
-        self.assertIn("【AI 前沿信息】</b>\n<b>Claude 4.1 发布：更强的 Agent 能力", text)
+        self.assertIn("【AI 前沿信息】</b>\nClaude 4.1 发布：更强的 Agent 能力", text)
         self.assertNotIn("🚀", text)
 
     def test_render_supports_independent_template_link_variables(self):
