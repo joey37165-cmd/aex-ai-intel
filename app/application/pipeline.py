@@ -94,10 +94,11 @@ def render_message(
         return html.escape(text)
 
     published = item.published_at.isoformat() if item.published_at else None
+    summary = _format_summary(esc(result.summary, 200, preserve_newlines=True))
     values = {
         "header": esc(result.category),
         "category_line": esc(normalize_category(result.category)),
-        "title": esc(clean_display_title(result.display_title or item.title)), "summary": esc(result.summary, 200, preserve_newlines=True),
+        "title": esc(clean_display_title(result.display_title or item.title)), "summary": summary,
         "why_it_matters": esc(result.why_it_matters), "suggested_action": esc(result.suggested_action),
         "source": esc(item.source_name, 100), "time": format_time(published),
         "url": html.escape(item.url, quote=True),
@@ -114,6 +115,24 @@ def render_message(
         template_provider,
     )
     return template.format(**values)
+
+
+def _format_summary(value: str) -> str:
+    """Keep prompt numbering, with a deterministic display fallback for old output."""
+    lines = [line.strip() for line in value.split("\n") if line.strip()]
+    if not lines:
+        return ""
+    if any(re.match(r"^[（(]\d+[）)]", line) for line in lines):
+        return "\n".join(lines)
+
+    points = []
+    for line in lines:
+        points.extend(part.strip() for part in re.split(r"(?<=[。！？；])", line) if part.strip())
+    if len(points) <= 1:
+        return lines[0]
+    if len(points) > 4:
+        points = points[:3] + ["".join(points[3:])]
+    return "\n".join(f"（{index}）{point}" for index, point in enumerate(points, start=1))
 
 
 def render_digest(

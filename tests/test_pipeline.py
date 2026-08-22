@@ -115,6 +115,13 @@ class PipelineTests(unittest.TestCase):
         text = render_message(item(), result)
         self.assertIn("（1）第一条事实。\n（2）第二条事实。", text)
 
+    def test_render_numbers_unformatted_summary_sentences_without_inventing_text(self):
+        result = AnalysisResult(
+            "notify", "A", "模型", "第一条事实。第二条事实；第三条事实。", "不展示", "查看", 0.9,
+        )
+        text = render_message(item(), result)
+        self.assertIn("（1）第一条事实。\n（2）第二条事实；\n（3）第三条事实。", text)
+
     def test_render_uses_beijing_time(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         text = render_message(item(), result)
