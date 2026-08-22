@@ -57,6 +57,24 @@ def format_time(value: str | None) -> str:
 DEFAULT_TEMPLATE = Path(__file__).resolve().parents[2] / "config" / "templates" / "telegram.html"
 DEFAULT_DIGEST_TEMPLATE = Path(__file__).resolve().parents[2] / "config" / "templates" / "telegram_digest.html"
 
+_BRAND_EMOJI = (
+    ("openai", re.compile(r"\b(?:openai|chatgpt|sora)\b", re.IGNORECASE), "🤖"),
+    ("anthropic", re.compile(r"\b(?:anthropic|claude)\b", re.IGNORECASE), "🧠"),
+    ("google", re.compile(r"\b(?:google|gemini|deepmind)\b", re.IGNORECASE), "✨"),
+    ("meta", re.compile(r"\b(?:meta(?:\s+ai)?|llama)\b", re.IGNORECASE), "♾️"),
+    ("deepseek", re.compile(r"\bdeepseek\b", re.IGNORECASE), "🐋"),
+)
+
+_CUSTOM_EMOJI_ENV = {
+    "openai": "TELEGRAM_CUSTOM_EMOJI_OPENAI",
+    "anthropic": "TELEGRAM_CUSTOM_EMOJI_ANTHROPIC",
+    "google": "TELEGRAM_CUSTOM_EMOJI_GOOGLE",
+    "meta": "TELEGRAM_CUSTOM_EMOJI_META",
+    "deepseek": "TELEGRAM_CUSTOM_EMOJI_DEEPSEEK",
+    "frontier": "TELEGRAM_CUSTOM_EMOJI_AI_FRONTIER",
+    "application": "TELEGRAM_CUSTOM_EMOJI_AI_APPLICATION",
+}
+
 
 def _template_content(
     template_id: str,
@@ -98,6 +116,7 @@ def render_message(
     values = {
         "header": esc(result.category),
         "category_line": esc(normalize_category(result.category)),
+        "title_prefix": _title_prefix(item, result),
         "title": esc(clean_display_title(result.display_title or item.title)), "summary": summary,
         "why_it_matters": esc(result.why_it_matters), "suggested_action": esc(result.suggested_action),
         "source": esc(item.source_name, 100), "time": format_time(published),
@@ -133,6 +152,30 @@ def _format_summary(value: str) -> str:
     if len(points) > 4:
         points = points[:3] + ["".join(points[3:])]
     return "\n\n".join(f"（{index}）{point}" for index, point in enumerate(points, start=1))
+
+
+def _title_prefix(item: ContentItem, result: AnalysisResult) -> str:
+    """Choose a brand emoji first, then fall back to the normalized category."""
+    candidates = (
+        f"{item.source_id} {item.source_name}",
+        f"{result.event.organization or ''} {result.event.product or ''}",
+        f"{result.display_title} {item.title}",
+    )
+    for candidate in candidates:
+        for key, pattern, fallback in _BRAND_EMOJI:
+            if pattern.search(candidate):
+                return _custom_emoji(key, fallback)
+
+    if normalize_category(result.category) == "AI 应用":
+        return _custom_emoji("application", "⚙️")
+    return _custom_emoji("frontier", "🚀")
+
+
+def _custom_emoji(key: str, fallback: str) -> str:
+    emoji_id = os.environ.get(_CUSTOM_EMOJI_ENV[key], "").strip()
+    if emoji_id.isdecimal():
+        return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+    return fallback
 
 
 def render_digest(

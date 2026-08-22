@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from app.adapters.llm.deepseek import RuleBasedAnalyzer
 from app.application.pipeline import process_item, render_digest, render_message, send_pending
-from app.domain.models import AnalysisResult, ContentItem, DigestReport, ProcessOutcome
+from app.domain.models import AnalysisResult, ContentItem, DigestReport, EventFeatures, ProcessOutcome
 from app.domain.policies import NotificationPolicy
 from app.infrastructure.store import SQLiteStore
 
@@ -125,7 +125,7 @@ class PipelineTests(unittest.TestCase):
     def test_render_uses_beijing_time(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         text = render_message(item(), result)
-        self.assertIn("【AI 前沿信息】</b>\nNew model release", text)
+        self.assertIn("<b>🚀 New model release</b>", text)
         self.assertNotIn("S级", text)
         self.assertNotIn("建议动作", text)
         self.assertNotIn("来源：", text)
@@ -145,8 +145,43 @@ class PipelineTests(unittest.TestCase):
             display_title="🚀 Claude 4.1 发布：更强的 Agent 能力",
         )
         text = render_message(item(title="🚀 Claude 4.1 released"), result)
-        self.assertIn("【AI 前沿信息】</b>\nClaude 4.1 发布：更强的 Agent 能力", text)
+        self.assertIn("<b>🧠 Claude 4.1 发布：更强的 Agent 能力</b>", text)
         self.assertNotIn("🚀", text)
+
+    def test_title_prefix_prefers_official_source_brand(self):
+        result = AnalysisResult(
+            "notify", "S", "AI 前沿信息", "摘要", "价值", "查看", 0.9,
+            display_title="新模型发布",
+        )
+        source_item = ContentItem(
+            "openai", "rss-openai-news", "OpenAI News", "模型", "New model",
+            "https://example.com/openai", "Summary", None,
+        )
+        with patch.dict(os.environ, {"TELEGRAM_CUSTOM_EMOJI_OPENAI": "6073311243781807979"}, clear=False):
+            text = render_message(source_item, result)
+        self.assertIn(
+            '<tg-emoji emoji-id="6073311243781807979">🤖</tg-emoji>',
+            text,
+        )
+
+    def test_title_prefix_uses_event_brand_for_media_source(self):
+        result = AnalysisResult(
+            "notify", "S", "AI 前沿信息", "摘要", "价值", "查看", 0.9,
+            display_title="V4 模型发布",
+            event=EventFeatures(organization="DeepSeek", product="V4"),
+        )
+        with patch.dict(os.environ, {"TELEGRAM_CUSTOM_EMOJI_DEEPSEEK": "6075514931371842855"}, clear=False):
+            text = render_message(item(), result)
+        self.assertIn(
+            '<tg-emoji emoji-id="6075514931371842855">🐋</tg-emoji>',
+            text,
+        )
+
+    def test_title_prefix_falls_back_to_category_emoji(self):
+        result = AnalysisResult("notify", "A", "AI 应用", "摘要", "价值", "查看", 0.9)
+        with patch.dict(os.environ, {"TELEGRAM_CUSTOM_EMOJI_AI_APPLICATION": ""}, clear=False):
+            text = render_message(item(title="New workflow"), result)
+        self.assertIn("⚙️", text)
 
     def test_render_supports_independent_template_link_variables(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)

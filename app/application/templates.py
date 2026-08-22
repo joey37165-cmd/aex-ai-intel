@@ -28,7 +28,7 @@ TEMPLATE_DEFINITIONS = {
         description="新消息筛选后即时推送到 Telegram",
         file_path=ROOT / "config" / "templates" / "telegram.html",
         allowed_variables=(
-            "category_line", "title", "summary", "why_it_matters", "original_url",
+            "category_line", "title_prefix", "title", "summary", "why_it_matters", "original_url",
             "my_x_url", "links_line",
         ),
         required_variables=("title", "summary"),
@@ -54,7 +54,7 @@ class TemplateValidationError(ValueError):
 class _TelegramHTMLValidator(HTMLParser):
     ALLOWED_TAGS = {
         "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
-        "a", "code", "pre", "blockquote", "tg-spoiler",
+        "a", "code", "pre", "blockquote", "tg-spoiler", "tg-emoji",
     }
 
     def __init__(self, *args, **kwargs) -> None:
@@ -68,6 +68,9 @@ class _TelegramHTMLValidator(HTMLParser):
             unsupported = [name for name, _ in attrs if name != "href"]
             if unsupported:
                 raise TemplateValidationError("链接标签只允许 href 属性")
+        elif tag == "tg-emoji":
+            if len(attrs) != 1 or attrs[0][0] != "emoji-id" or not (attrs[0][1] or "").isdecimal():
+                raise TemplateValidationError("自定义 Emoji 标签只允许数字 emoji-id 属性")
         elif attrs:
             raise TemplateValidationError(f"<{tag}> 标签不允许属性")
         self.stack.append(tag)

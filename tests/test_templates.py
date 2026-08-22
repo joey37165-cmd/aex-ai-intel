@@ -77,6 +77,19 @@ class TemplateManagementTests(unittest.TestCase):
         with self.assertRaises(TemplateValidationError):
             validate_template("realtime", "<b>{title}\n{summary}\n{links_line}")
 
+    def test_validation_accepts_title_prefix_and_custom_emoji(self):
+        content = (
+            '<tg-emoji emoji-id="6073311243781807979">🤖</tg-emoji> '
+            "{title_prefix} {title}\n{summary}"
+        )
+        self.assertEqual(validate_template("realtime", content), content)
+
+        with self.assertRaises(TemplateValidationError):
+            validate_template(
+                "realtime",
+                '<tg-emoji emoji-id="not-a-number">🤖</tg-emoji> {title}\n{summary}',
+            )
+
     @staticmethod
     def _item():
         return ContentItem(
