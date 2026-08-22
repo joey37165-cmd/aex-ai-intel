@@ -77,7 +77,10 @@ class TemplateManagementTests(unittest.TestCase):
         with self.assertRaises(TemplateValidationError):
             validate_template("realtime", "<b>{title}\n{summary}\n{links_line}")
 
-    def test_validation_rejects_removed_title_prefix(self):
+    def test_validation_accepts_category_icon_and_rejects_removed_title_prefix(self):
+        content = "{category_icon} {title}\n{summary}"
+        self.assertEqual(validate_template("realtime", content), content)
+
         with self.assertRaises(TemplateValidationError):
             validate_template("realtime", "{title_prefix} {title}\n{summary}")
 
