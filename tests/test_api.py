@@ -35,7 +35,7 @@ class TemplateAPITests(unittest.TestCase):
     def test_save_and_publish_template(self):
         templates = self.client.get("/api/admin/templates", headers=self.headers).json()
         realtime = next(item for item in templates if item["id"] == "realtime")
-        content = "<b>【{category_line}】API {title}</b>\n{summary}\n{links_line}"
+        content = "<b>【{category_line}】API {title}</b>\n{summary}\n<a href=\"{original_url}\">原文</a>"
 
         saved = self.client.put(
             "/api/admin/templates/realtime/draft",
@@ -64,7 +64,7 @@ class TemplateAPITests(unittest.TestCase):
         realtime = self.client.get(
             "/api/admin/templates/realtime", headers=self.headers
         ).json()
-        valid = "<b>【{category_line}】{title}</b>\n{summary}\n{links_line}"
+        valid = "<b>【{category_line}】{title}</b>\n{summary}\n<a href=\"{original_url}\">原文</a>"
         first = self.client.put(
             "/api/admin/templates/realtime/draft", headers=self.headers,
             json={"content": valid, "expected_revision": realtime["draftRevision"]},
@@ -78,7 +78,7 @@ class TemplateAPITests(unittest.TestCase):
         invalid = self.client.put(
             "/api/admin/templates/realtime/draft", headers=self.headers,
             json={
-                "content": "{title}\n{summary}\n{links_line}\n{bad}",
+                "content": "{title}\n{summary}\n{bad}",
                 "expected_revision": first.json()["draftRevision"],
             },
         )

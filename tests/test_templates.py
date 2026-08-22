@@ -21,7 +21,7 @@ class TemplateManagementTests(unittest.TestCase):
 
     def test_draft_does_not_affect_rendering_until_published(self):
         detail = self.store.template_detail("realtime")
-        content = "<b>NEW {title}</b>\n{summary}\n{links_line}"
+        content = "<b>NEW {title}</b>\n{summary}\n<a href=\"{original_url}\">原文</a>"
         saved = self.store.save_template_draft("realtime", content, detail["draft_revision"])
 
         before = render_message(self._item(), self._analysis(), template_provider=self.store)
@@ -35,10 +35,10 @@ class TemplateManagementTests(unittest.TestCase):
     def test_stale_revision_cannot_overwrite_newer_draft(self):
         detail = self.store.template_detail("realtime")
         first = self.store.save_template_draft(
-            "realtime", "<b>{title}</b>\n{summary}\n{links_line}", detail["draft_revision"]
+            "realtime", "<b>{title}</b>\n{summary}\n<a href=\"{original_url}\">原文</a>", detail["draft_revision"]
         )
         stale = self.store.save_template_draft(
-            "realtime", "<b>stale {title}</b>\n{summary}\n{links_line}", detail["draft_revision"]
+            "realtime", "<b>stale {title}</b>\n{summary}\n<a href=\"{original_url}\">原文</a>", detail["draft_revision"]
         )
         self.assertIsNotNone(first)
         self.assertIsNone(stale)
@@ -46,7 +46,7 @@ class TemplateManagementTests(unittest.TestCase):
     def test_restore_creates_draft_and_requires_publish(self):
         detail = self.store.template_detail("realtime")
         saved = self.store.save_template_draft(
-            "realtime", "<b>V2 {title}</b>\n{summary}\n{links_line}", detail["draft_revision"]
+            "realtime", "<b>V2 {title}</b>\n{summary}\n<a href=\"{original_url}\">原文</a>", detail["draft_revision"]
         )
         published = self.store.publish_template("realtime", saved["draft_revision"], "test")
         restored = self.store.restore_template_version(
@@ -59,7 +59,7 @@ class TemplateManagementTests(unittest.TestCase):
     def test_same_draft_cannot_be_published_twice(self):
         detail = self.store.template_detail("realtime")
         saved = self.store.save_template_draft(
-            "realtime", "<b>V2 {title}</b>\n{summary}\n{links_line}", detail["draft_revision"]
+            "realtime", "<b>V2 {title}</b>\n{summary}\n<a href=\"{original_url}\">原文</a>", detail["draft_revision"]
         )
 
         published = self.store.publish_template("realtime", saved["draft_revision"], "test")
@@ -71,7 +71,7 @@ class TemplateManagementTests(unittest.TestCase):
 
     def test_validation_rejects_unknown_variables_and_unsafe_html(self):
         with self.assertRaises(TemplateValidationError):
-            validate_template("realtime", "{title}\n{summary}\n{links_line}\n{unknown}")
+            validate_template("realtime", "{title}\n{summary}\n{unknown}")
         with self.assertRaises(TemplateValidationError):
             validate_template("realtime", "<script>{title}</script>\n{summary}\n{links_line}")
         with self.assertRaises(TemplateValidationError):

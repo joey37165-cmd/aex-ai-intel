@@ -28,6 +28,18 @@ def _clean_text(value: Any, fallback: str, limit: int) -> str:
     return f"{text[:limit - 1].rstrip()}…"
 
 
+def _clean_multiline_text(value: Any, fallback: str, limit: int) -> str:
+    lines = []
+    for line in str(value or fallback).replace("\r\n", "\n").split("\n"):
+        cleaned = re.sub(r"[ \t]+", " ", line).strip()
+        if cleaned:
+            lines.append(cleaned)
+    text = "\n".join(lines).strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit - 1].rstrip()}…"
+
+
 _EVENT_TYPES = {
     "model_release", "model_update", "api_update", "pricing_change", "tool_release",
     "workflow_update", "research_result", "security_incident",
@@ -77,7 +89,7 @@ def _result(data: dict[str, Any], item: ContentItem) -> AnalysisResult:
     if raw_category not in {"AI 前沿信息", "AI 应用"}:
         app_terms = ("工作流", "agent", "github", "工具", "应用", "变现", "workflow")
         raw_category = "AI 应用" if any(term in raw_category.lower() for term in app_terms) else "AI 前沿信息"
-    summary = _clean_text(data.get("summary"), item.summary or item.title, 240)
+    summary = _clean_multiline_text(data.get("summary"), item.summary or item.title, 200)
     return AnalysisResult(
         decision=decision,
         priority=priority,

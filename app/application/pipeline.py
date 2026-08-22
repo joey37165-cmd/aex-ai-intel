@@ -83,8 +83,12 @@ def render_message(
     template_path: Path | None = None,
     template_provider: TemplateProvider | None = None,
 ) -> str:
-    def esc(value: str, limit: int | None = None) -> str:
-        text = re.sub(r"\s+", " ", value or "").strip()
+    def esc(value: str, limit: int | None = None, preserve_newlines: bool = False) -> str:
+        if preserve_newlines:
+            lines = [re.sub(r"[ \t]+", " ", line).strip() for line in (value or "").replace("\r\n", "\n").split("\n")]
+            text = "\n".join(line for line in lines if line).strip()
+        else:
+            text = re.sub(r"\s+", " ", value or "").strip()
         if limit and len(text) > limit:
             text = f"{text[:limit - 1].rstrip()}…"
         return html.escape(text)
@@ -93,17 +97,20 @@ def render_message(
     values = {
         "header": esc(result.category),
         "category_line": esc(normalize_category(result.category)),
-        "title": esc(clean_display_title(result.display_title or item.title)), "summary": esc(result.summary, 240),
+        "title": esc(clean_display_title(result.display_title or item.title)), "summary": esc(result.summary, 200, preserve_newlines=True),
         "why_it_matters": esc(result.why_it_matters), "suggested_action": esc(result.suggested_action),
         "source": esc(item.source_name, 100), "time": format_time(published),
         "url": html.escape(item.url, quote=True),
+        "original_url": html.escape(item.url, quote=True),
+        "my_x_url": _creator_x_url(),
         "my_x_link": _creator_x_link(),
         "links_line": _links_line(item.url),
     }
     template = _template_content(
         "realtime",
         template_path or DEFAULT_TEMPLATE,
-        "<b>【{category_line}】{title}</b>\n\n{summary}\n\n<b>【重点】</b>\n{why_it_matters}\n\n{links_line}",
+        "<b>【{category_line}】</b>\n<b>{title}</b>\n\n<b>【要点】</b>\n{summary}\n\n"
+        '<a href="{original_url}">↗ 阅读原文</a> | <a href="{my_x_url}">𝕏 · Aex0x0</a>',
         template_provider,
     )
     return template.format(**values)
@@ -149,16 +156,23 @@ def render_digest(
 
 
 def _creator_x_link() -> str:
+    value = _creator_x_url()
+    if not value:
+        return ""
+    return f'<a href="{value}">𝕏 · Aex0x0</a>'
+
+
+def _creator_x_url() -> str:
     value = os.environ.get("CREATOR_X_URL", "").strip() or "https://x.com/axe0x0"
     if not value.startswith(("https://x.com/", "https://twitter.com/")):
         return ""
-    return f'<a href="{html.escape(value, quote=True)}">𝕏 Aex0x0</a>'
+    return html.escape(value, quote=True)
 
 
 def _links_line(article_url: str) -> str:
-    original = f'<a href="{html.escape(article_url, quote=True)}">🔗 阅读原文</a>'
+    original = f'<a href="{html.escape(article_url, quote=True)}">↗ 阅读原文</a>'
     creator = _creator_x_link()
-    return f"{original} · {creator}" if creator else original
+    return f"{original} | {creator}" if creator else original
 
 
 def deliver_message(notifier, item: ContentItem, text: str) -> str:

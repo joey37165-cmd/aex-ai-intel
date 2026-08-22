@@ -105,24 +105,32 @@ class PipelineTests(unittest.TestCase):
         result = AnalysisResult("notify", "S", "模型", "a < b", "why & now", "查看", 0.9)
         text = render_message(item(title="<unsafe>"), result)
         self.assertIn("&lt;unsafe&gt;", text)
-        self.assertIn("why &amp; now", text)
+        self.assertNotIn("why &amp; now", text)
+        self.assertIn("a &lt; b", text)
+
+    def test_render_preserves_numbered_summary_lines(self):
+        result = AnalysisResult(
+            "notify", "A", "模型", "（1）第一条事实。\n（2）第二条事实。", "不展示", "查看", 0.9,
+        )
+        text = render_message(item(), result)
+        self.assertIn("（1）第一条事实。\n（2）第二条事实。", text)
 
     def test_render_uses_beijing_time(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         text = render_message(item(), result)
-        self.assertIn("【AI 前沿信息】New model release", text)
+        self.assertIn("【AI 前沿信息】</b>\n<b>New model release", text)
         self.assertNotIn("S级", text)
         self.assertNotIn("建议动作", text)
         self.assertNotIn("来源：", text)
         self.assertNotIn("北京时间", text)
-        self.assertIn("<b>【重点】</b>", text)
-        self.assertIn("<a href=\"https://example.com/one\">🔗 阅读原文</a>", text)
+        self.assertIn("<b>【要点】</b>", text)
+        self.assertIn("<a href=\"https://example.com/one\">↗ 阅读原文</a>", text)
 
     def test_render_includes_configured_creator_x_link(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         with patch.dict(os.environ, {"CREATOR_X_URL": "https://x.com/aex"}, clear=False):
             text = render_message(item(), result)
-        self.assertIn('<a href="https://example.com/one">🔗 阅读原文</a> · <a href="https://x.com/aex">𝕏 Aex0x0</a>', text)
+        self.assertIn('<a href="https://example.com/one">↗ 阅读原文</a> | <a href="https://x.com/aex">𝕏 · Aex0x0</a>', text)
 
     def test_render_uses_translated_title_without_emoji(self):
         result = AnalysisResult(
@@ -130,8 +138,21 @@ class PipelineTests(unittest.TestCase):
             display_title="🚀 Claude 4.1 发布：更强的 Agent 能力",
         )
         text = render_message(item(title="🚀 Claude 4.1 released"), result)
-        self.assertIn("【AI 前沿信息】Claude 4.1 发布：更强的 Agent 能力", text)
+        self.assertIn("【AI 前沿信息】</b>\n<b>Claude 4.1 发布：更强的 Agent 能力", text)
         self.assertNotIn("🚀", text)
+
+    def test_render_supports_independent_template_link_variables(self):
+        result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
+        template = '<a href="{my_x_url}">我的 X</a> | <a href="{original_url}">原文</a>'
+        with tempfile.TemporaryDirectory() as directory:
+            template_path = Path(directory) / "template.html"
+            template_path.write_text(template, encoding="utf-8")
+            text = render_message(item(), result, template_path=template_path)
+        self.assertEqual(
+            text,
+            '<a href="https://x.com/axe0x0">我的 X</a> | '
+            '<a href="https://example.com/one">原文</a>',
+        )
 
     def test_item_with_image_uses_photo_delivery(self):
         photo_item = ContentItem(

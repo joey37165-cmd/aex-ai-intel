@@ -14,7 +14,7 @@ class TelegramNotifier:
     def send(self, text: str) -> str:
         request = urllib.request.Request(
             f"{self.base_url}/sendMessage",
-            data=json.dumps({"chat_id": self.chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": False}).encode("utf-8"),
+            data=json.dumps({"chat_id": self.chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}).encode("utf-8"),
             headers={"Content-Type": "application/json", "User-Agent": "Aex-AI-Intel/0.1"}, method="POST",
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:

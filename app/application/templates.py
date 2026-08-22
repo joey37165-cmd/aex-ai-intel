@@ -28,9 +28,10 @@ TEMPLATE_DEFINITIONS = {
         description="新消息筛选后即时推送到 Telegram",
         file_path=ROOT / "config" / "templates" / "telegram.html",
         allowed_variables=(
-            "category_line", "title", "summary", "why_it_matters", "links_line",
+            "category_line", "title", "summary", "why_it_matters", "original_url",
+            "my_x_url", "links_line",
         ),
-        required_variables=("category_line", "title", "summary", "links_line"),
+        required_variables=("category_line", "title", "summary"),
     ),
     "digest": TemplateDefinition(
         template_id="digest",
