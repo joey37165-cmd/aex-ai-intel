@@ -98,7 +98,6 @@ def render_message(
     values = {
         "header": esc(result.category),
         "category_line": esc(normalize_category(result.category)),
-        "title_prefix": _title_prefix(result),
         "title": esc(clean_display_title(result.display_title or item.title)), "summary": summary,
         "why_it_matters": esc(result.why_it_matters), "suggested_action": esc(result.suggested_action),
         "source": esc(item.source_name, 100), "time": format_time(published),
@@ -134,10 +133,6 @@ def _format_summary(value: str) -> str:
     if len(points) > 4:
         points = points[:3] + ["".join(points[3:])]
     return "\n\n".join(f"（{index}）{point}" for index, point in enumerate(points, start=1))
-
-
-def _title_prefix(result: AnalysisResult) -> str:
-    return "⚙️" if normalize_category(result.category) == "AI 应用" else "🚀"
 
 
 def render_digest(

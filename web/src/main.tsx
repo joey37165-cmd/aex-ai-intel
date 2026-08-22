@@ -69,7 +69,7 @@ type Template = {
   variables: Variable[]
 }
 
-const realtimeTemplate = `<b>{title_prefix} {title}</b>
+const realtimeTemplate = `<b>{title}</b>
 
 <b>【要点】</b>
 
@@ -95,7 +95,6 @@ const digestTemplate = `<b>{report_title} · {period_label}</b>
 
 const realtimeVariables: Variable[] = [
   { key: 'category_line', label: '分类', description: 'AI 前沿信息或 AI 应用', example: 'AI 前沿信息' },
-  { key: 'title_prefix', label: '分类图标', description: 'AI 前沿信息显示 🚀，AI 应用显示 ⚙️', example: '🚀' },
   { key: 'title', label: '中文标题', description: '经过筛选和翻译的消息标题', example: 'Anthropic 发布新一代模型' },
   { key: 'summary', label: '摘要', description: '消息的简洁事实摘要', example: 'Anthropic 公布了新的模型能力与 API 更新。' },
   { key: 'original_url', label: '原文链接', description: '当前消息的原文 URL，可放入 a 标签 href', example: 'https://example.com/article' },

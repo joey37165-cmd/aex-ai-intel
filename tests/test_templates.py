@@ -77,15 +77,9 @@ class TemplateManagementTests(unittest.TestCase):
         with self.assertRaises(TemplateValidationError):
             validate_template("realtime", "<b>{title}\n{summary}\n{links_line}")
 
-    def test_validation_accepts_title_prefix(self):
-        content = "{title_prefix} {title}\n{summary}"
-        self.assertEqual(validate_template("realtime", content), content)
-
+    def test_validation_rejects_removed_title_prefix(self):
         with self.assertRaises(TemplateValidationError):
-            validate_template(
-                "realtime",
-                '<tg-emoji emoji-id="6073311243781807979">🤖</tg-emoji> {title}\n{summary}',
-            )
+            validate_template("realtime", "{title_prefix} {title}\n{summary}")
 
     @staticmethod
     def _item():

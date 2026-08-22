@@ -125,7 +125,7 @@ class PipelineTests(unittest.TestCase):
     def test_render_uses_beijing_time(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
         text = render_message(item(), result)
-        self.assertIn("<b>🚀 New model release</b>", text)
+        self.assertIn("<b>New model release</b>", text)
         self.assertNotIn("S级", text)
         self.assertNotIn("建议动作", text)
         self.assertNotIn("来源：", text)
@@ -145,10 +145,10 @@ class PipelineTests(unittest.TestCase):
             display_title="🚀 Claude 4.1 发布：更强的 Agent 能力",
         )
         text = render_message(item(title="🚀 Claude 4.1 released"), result)
-        self.assertIn("<b>🚀 Claude 4.1 发布：更强的 Agent 能力</b>", text)
-        self.assertNotIn("🚀 🚀", text)
+        self.assertIn("<b>Claude 4.1 发布：更强的 Agent 能力</b>", text)
+        self.assertNotIn("🚀", text)
 
-    def test_title_prefix_uses_frontier_category_not_brand(self):
+    def test_title_does_not_add_source_brand_or_category_icon(self):
         result = AnalysisResult(
             "notify", "S", "AI 前沿信息", "摘要", "价值", "查看", 0.9,
             display_title="新模型发布",
@@ -158,13 +158,9 @@ class PipelineTests(unittest.TestCase):
             "https://example.com/openai", "Summary", None,
         )
         text = render_message(source_item, result)
-        self.assertIn("<b>🚀 新模型发布</b>", text)
+        self.assertIn("<b>新模型发布</b>", text)
         self.assertNotIn("🤖", text)
-
-    def test_title_prefix_uses_application_category(self):
-        result = AnalysisResult("notify", "A", "AI 应用", "摘要", "价值", "查看", 0.9)
-        text = render_message(item(title="New workflow"), result)
-        self.assertIn("⚙️", text)
+        self.assertNotIn("🚀", text)
 
     def test_render_supports_independent_template_link_variables(self):
         result = AnalysisResult("notify", "S", "模型", "摘要", "价值", "查看", 0.9)
