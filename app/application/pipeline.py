@@ -110,7 +110,7 @@ def render_message(
     template = _template_content(
         "realtime",
         template_path or DEFAULT_TEMPLATE,
-        "<b>【{category_line}】</b>\n<b>{title}</b>\n\n<b>【要点】</b>\n{summary}\n\n"
+        "<b>【{category_line}】</b>\n\n{title}\n\n<b>【要点】</b>\n\n{summary}\n\n"
         '<a href="{original_url}">↗ 阅读原文</a> | <a href="{my_x_url}">𝕏 · Aex0x0</a>',
         template_provider,
     )

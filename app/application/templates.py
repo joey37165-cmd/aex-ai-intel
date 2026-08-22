@@ -31,7 +31,7 @@ TEMPLATE_DEFINITIONS = {
             "category_line", "title", "summary", "why_it_matters", "original_url",
             "my_x_url", "links_line",
         ),
-        required_variables=("category_line", "title", "summary"),
+        required_variables=("title", "summary"),
     ),
     "digest": TemplateDefinition(
         template_id="digest",

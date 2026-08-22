@@ -84,6 +84,19 @@ class TemplateAPITests(unittest.TestCase):
         )
         self.assertEqual(invalid.status_code, 422)
 
+    def test_realtime_category_is_optional(self):
+        realtime = self.client.get(
+            "/api/admin/templates/realtime", headers=self.headers
+        ).json()
+        response = self.client.put(
+            "/api/admin/templates/realtime/draft", headers=self.headers,
+            json={
+                "content": "{title}\n\n{summary}",
+                "expected_revision": realtime["draftRevision"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

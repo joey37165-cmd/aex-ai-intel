@@ -69,14 +69,15 @@ type Template = {
   variables: Variable[]
 }
 
-const realtimeTemplate = `<b>【{category_line}】{title}</b>
+const realtimeTemplate = `<b>【{category_line}】</b>
+
+{title}
+
+<b>【要点】</b>
 
 {summary}
 
-<b>【重点】</b>
-{why_it_matters}
-
-{links_line}`
+<a href="{original_url}">↗ 阅读原文</a>　|　<a href="{my_x_url}">𝕏 Aex0x0</a>`
 
 const digestTemplate = `<b>{report_title} · {period_label}</b>
 
@@ -98,8 +99,10 @@ const realtimeVariables: Variable[] = [
   { key: 'category_line', label: '分类', description: 'AI 前沿信息或 AI 应用', example: 'AI 前沿信息' },
   { key: 'title', label: '中文标题', description: '经过筛选和翻译的消息标题', example: 'Anthropic 发布新一代模型' },
   { key: 'summary', label: '摘要', description: '消息的简洁事实摘要', example: 'Anthropic 公布了新的模型能力与 API 更新。' },
-  { key: 'why_it_matters', label: '重点', description: '这条信息对你的价值和影响', example: '模型能力提升，可能改变现有工作流。' },
-  { key: 'links_line', label: '链接行', description: '阅读原文与 Aex0x0 X 主页', example: '🔗 阅读原文 · 𝕏 Aex0x0' },
+  { key: 'original_url', label: '原文链接', description: '当前消息的原文 URL，可放入 a 标签 href', example: 'https://example.com/article' },
+  { key: 'my_x_url', label: '我的 X 链接', description: 'Aex0x0 的 X 主页 URL，可放入 a 标签 href', example: 'https://x.com/axe0x0' },
+  { key: 'why_it_matters', label: '重点（兼容）', description: '旧模板字段，新模板不再使用', example: '模型能力提升。' },
+  { key: 'links_line', label: '链接行（兼容）', description: '旧模板字段，新模板可用独立链接变量替代', example: '↗ 阅读原文 · 𝕏 Aex0x0' },
 ]
 
 const digestVariables: Variable[] = [
@@ -153,6 +156,8 @@ const previewValues: Record<string, string> = {
   category_line: 'AI 前沿信息',
   title: 'Anthropic 发布新一代模型，开发者工具同步更新',
   summary: 'Anthropic 公布了新的模型能力与 API 更新，重点提升长上下文任务和工具调用表现。',
+  original_url: 'https://www.anthropic.com/news',
+  my_x_url: 'https://x.com/axe0x0',
   why_it_matters: '模型能力和调用方式同时变化，值得及时评估对现有工作流的影响。',
   links_line: '<a href="https://www.anthropic.com/news">🔗 阅读原文</a> · <a href="https://x.com/axe0x0">𝕏 Aex0x0</a>',
   report_title: 'AI 日报',

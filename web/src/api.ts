@@ -42,14 +42,19 @@ export function forgetToken(): void {
 }
 
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...init?.headers,
-    },
-  })
+  let response: Response
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...init?.headers,
+      },
+    })
+  } catch {
+    throw new ApiError('无法连接管理服务，请检查 SSH 隧道是否仍在运行', 0)
+  }
   if (!response.ok) {
     let message = `请求失败（${response.status}）`
     try {
